@@ -1,0 +1,17 @@
+.venv/
+.tools/
+target/
+dist/
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.env
+.env.*
+!.env.example
+python/fbfast/_native*.so
+python/fbfast/_runtime/
+python/fbfast/_licenses/
+python/fbfast/_build_info.json
+*.fdb
+

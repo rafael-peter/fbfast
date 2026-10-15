@@ -1,0 +1,22 @@
+{
+  "Firebird-IPL.txt": {
+    "source": "https://raw.githubusercontent.com/FirebirdSQL/firebird/v5.0.3/builds/install/misc/IPLicense.txt",
+    "sha256": "0c9e7c3ce85cb7a672844970f59ca1b0912bc9976c9a0953434cad0c78e1376a"
+  },
+  "Firebird-IDPL.txt": {
+    "source": "https://raw.githubusercontent.com/FirebirdSQL/firebird/v5.0.3/builds/install/misc/IDPLicense.txt",
+    "sha256": "94feb2e5f8a72fa9973808398385e291386163eb9f85df99be40fb85f2c35399"
+  },
+  "LibTomMath.txt": {
+    "source": "https://raw.githubusercontent.com/FirebirdSQL/firebird/v5.0.3/extern/libtommath/LICENSE",
+    "sha256": "5fb3ffe801e32ad4e02e0c0880d696a75abbd3f11728210d3c65f937c37ec284"
+  },
+  "LibTomCrypt.txt": {
+    "source": "https://raw.githubusercontent.com/FirebirdSQL/firebird/v5.0.3/extern/libtomcrypt/LICENSE",
+    "sha256": "8f196cb13afd271f5e267fd29543fc454596382ad580e7592709492843996ac8"
+  },
+  "ICU.txt": {
+    "source": "https://raw.githubusercontent.com/unicode-org/icu/release-71-1/icu4c/LICENSE",
+    "sha256": "af3e84c401f1a35e8d32d6eb1a33fe587c3981aa5cd206033d9527c1855b57a2"
+  }
+}

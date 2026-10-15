@@ -1,0 +1,6 @@
+maturin==1.10.2
+pytest==8.4.2
+ruff==0.14.1
+mypy==1.18.2
+wheel==0.45.1
+

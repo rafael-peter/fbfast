@@ -1,0 +1,58 @@
+"""Firebird 5 read-only client. Import never connects or downloads binaries."""
+
+from ._bootstrap import build_info, client_info
+from ._native import (
+    AuthenticationError,
+    CleanupError,
+    ClientLibraryError,
+    ConfigurationError,
+    DataConversionError,
+    FbFastError,
+    FirebirdConfig,
+    ForkSafetyError,
+    PoolError,
+    PoolBusyError,
+    PoolClosedError,
+    PoolTimeoutError,
+    QueryError,
+    QueryCancelledError,
+    QueryTimeoutError,
+    ReadOnlyViolationError,
+    ResultLimitError,
+    RoleNotActiveError,
+    UnsupportedFeatureError,
+    UnsupportedStatementError,
+    UnsupportedServerError,
+    UnsupportedTypeError,
+)
+from .pool import Pool
+
+__version__ = "0.1.0"
+__all__ = [
+    "__version__",
+    "build_info",
+    "client_info",
+    "FirebirdConfig",
+    "FbFastError",
+    "ConfigurationError",
+    "UnsupportedFeatureError",
+    "UnsupportedStatementError",
+    "ReadOnlyViolationError",
+    "ClientLibraryError",
+    "PoolError",
+    "ForkSafetyError",
+    "Pool",
+    "PoolBusyError",
+    "PoolClosedError",
+    "PoolTimeoutError",
+    "QueryError",
+    "QueryCancelledError",
+    "QueryTimeoutError",
+    "AuthenticationError",
+    "CleanupError",
+    "DataConversionError",
+    "ResultLimitError",
+    "RoleNotActiveError",
+    "UnsupportedServerError",
+    "UnsupportedTypeError",
+]

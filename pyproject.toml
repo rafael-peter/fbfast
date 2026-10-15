@@ -1,0 +1,58 @@
+[build-system]
+requires = ["maturin==1.10.2", "wheel==0.45.1"]
+build-backend = "build_backend"
+backend-path = ["."]
+
+[project]
+name = "fbfast"
+version = "0.1.0"
+description = "Read-only Firebird 5 client with a Rust execution core"
+requires-python = ">=3.11,<3.15"
+readme = "README.md"
+
+[project.optional-dependencies]
+arrow = ["pyarrow>=19"]
+polars = ["polars>=1.30"]
+
+[tool.maturin]
+manifest-path = "crates/fbfast-python/Cargo.toml"
+python-source = "python"
+module-name = "fbfast._native"
+profile = "release"
+features = ["pyo3/extension-module"]
+include = [
+  { path = "build_backend.py", format = "sdist" },
+  { path = "scripts/*.py", format = "sdist" },
+  { path = "third_party/licenses/**/*", format = "sdist" },
+  { path = "rust-toolchain.toml", format = "sdist" },
+  { path = "python/fbfast/_runtime/**/*", format = "wheel" },
+  { path = "python/fbfast/_licenses/**/*", format = "wheel" },
+  { path = "python/fbfast/_build_info.json", format = "wheel" },
+]
+
+[tool.uv]
+cache-keys = [
+  { file = "pyproject.toml" },
+  { file = "build_backend.py" },
+  { file = "Cargo.lock" },
+  { file = "Cargo.toml" },
+  { file = "rust-toolchain.toml" },
+  { file = "crates/**/*" },
+  { file = "python/**/*.py" },
+  { file = "python/**/*.pyi" },
+  { file = "scripts/*.py" },
+  { file = "third_party/licenses/**/*" },
+  { env = "FBFAST_CLIENT_ROOT" },
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+

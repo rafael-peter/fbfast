@@ -1,0 +1,62 @@
+{
+  "build_id": "cb0e7a9d04874b6d81a48d56320cac3f3f4867dd6ef254f7550db50b173bd647",
+  "samples": [
+    {
+      "sample": 0,
+      "caller_ms": 2.684959,
+      "slot_released_ms": 9.2075
+    },
+    {
+      "sample": 1,
+      "caller_ms": 4.907833,
+      "slot_released_ms": 10.265541
+    },
+    {
+      "sample": 2,
+      "caller_ms": 4.265041,
+      "slot_released_ms": 8.8785
+    },
+    {
+      "sample": 3,
+      "caller_ms": 7.489541,
+      "slot_released_ms": 11.522541
+    },
+    {
+      "sample": 4,
+      "caller_ms": 9.2425,
+      "slot_released_ms": 13.091042
+    },
+    {
+      "sample": 5,
+      "caller_ms": 9.404042,
+      "slot_released_ms": 13.525709
+    },
+    {
+      "sample": 6,
+      "caller_ms": 5.523583,
+      "slot_released_ms": 10.209333
+    },
+    {
+      "sample": 7,
+      "caller_ms": 13.786583,
+      "slot_released_ms": 17.617875
+    },
+    {
+      "sample": 8,
+      "caller_ms": 9.851083,
+      "slot_released_ms": 15.129208
+    },
+    {
+      "sample": 9,
+      "caller_ms": 11.391083,
+      "slot_released_ms": 16.599167
+    }
+  ],
+  "scenario": "SIGINT during aggregate query; timeout=None",
+  "server_image": "sha256:d1e15bdcc0da40bf5e8af24ba6ba1d14b23d0a43fd21faa4ec8b2089feefb3b8",
+  "correctness": "every cancelled attachment retired; replacement query succeeds",
+  "limitations": [
+    "10 local TCP/Docker samples; diagnostic, not a throughput comparison",
+    "slot release observed by 1 ms polling; not a network-partition guarantee"
+  ]
+}

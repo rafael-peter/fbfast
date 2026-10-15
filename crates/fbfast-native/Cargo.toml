@@ -1,0 +1,13 @@
+[package]
+name = "fbfast-native"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+libloading.workspace = true
+thiserror.workspace = true
+
+[build-dependencies]
+cc.workspace = true
+

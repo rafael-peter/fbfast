@@ -1,0 +1,17 @@
+[package]
+name = "fbfast-python"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "_native"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+fbfast-core.workspace = true
+pyo3.workspace = true
+pyo3-async-runtimes.workspace = true
+tokio.workspace = true
+serde_json.workspace = true
+
