@@ -61,8 +61,34 @@ print(fbfast.build_info())  # Sem conexão e sem carregar cliente
 print(fbfast.client_info())  # Carrega cliente, sem conexão ao banco
 ```
 
-`FirebirdConfig` já resolve argumentos, ambiente e `.env` em Rust, sem modificar
-o ambiente global. É imutável e oculta senha em `repr`. Já estão implementados
+## Configuração
+
+`FirebirdConfig()` já lê automaticamente `FB_*` do ambiente e o `.env` do diretório
+atual. Para cada campo: **argumento explícito → ambiente → .env → padrão**.
+Por exemplo, `host` omitido usa `FB_HOST` e, se ausente nas duas fontes, `localhost`.
+`database`, `user` e `password` não têm padrão e precisam existir em alguma fonte.
+
+```python
+from fbfast import FirebirdConfig, Pool
+
+config = FirebirdConfig()  # Usa FB_DATABASE, FB_USER, FB_PASSWORD etc.
+config = FirebirdConfig(host="outro-servidor", query_timeout=None)
+# host explícito prevalece; None desativa o prazo mesmo se FB_QUERY_TIMEOUT existir.
+```
+
+O construtor inclui tipos e documentação por parâmetro para o IntelliSense:
+função, variável de ambiente, valores aceitos e padrão. `...` na assinatura
+tipada representa um argumento omitido; não é um valor para passar ao construtor.
+`env_file=False` desativa apenas o arquivo, mantendo o ambiente. Um caminho
+explícito deve existir. `from_env(prefix="FB_BI_")` fica disponível para prefixos
+personalizados; não é necessário no uso normal.
+
+A resolução e validação ocorrem em Rust, sem modificar o ambiente global.
+A configuração é imutável e oculta senha em `repr`.
+
+## Consultas
+
+Já estão implementados
 `Pool`, `fetch_all`, `fetch_one`, `fetch_val`, `explain` (com params), `stats`,
 `warmup_sync`, `close_sync` e `with Pool(config)`. Consultas usam binding `?`, TPB READ ONLY e
 rollback/reset antes da reutilização. `fetch_all`/`fetch_one` aceitam `as_dict`.
@@ -73,6 +99,32 @@ As consultas e `explain` têm variantes `*_async`. Use `await pool.warmup()`,
 executor, com entrega vinculada ao loop da chamada; não exige loop global.
 Materialização Python ocorre em workers limitados com liberação periódica do
 GIL, incluindo cancelamento e deadline durante a conversão.
+
+As APIs de linhas `stream` e `stream_async` entregam lotes com a mesma conversão
+de tipos. A criação do context manager é lazy; o trabalho começa ao entrar nele.
+
+```python
+with pool.stream("SELECT ID, LABEL FROM MINHA_TABELA", batch_rows=1000) as batches:
+    for batch in batches:
+        processar(batch)
+
+async with pool.stream_async("SELECT ID, LABEL FROM MINHA_TABELA") as batches:
+    async for batch in batches:
+        await processar_async(batch)
+```
+
+`batch_rows=None` usa `fetch_size`. `batch_bytes` também limita o tamanho do lote
+considerando estruturas decodificadas; uma linha maior pode formar um lote único.
+`prefetch_batches` limita lotes antecipados além do corrente; zero desativa essa
+antecipação. O primeiro fetch espera demanda. Limites totais de materialização
+não são aplicados ao stream; guardar todos os lotes continua consumindo memória.
+
+Use `with`/`async with`, ou `Stream.close()`/`AsyncStream.aclose()`, para liberar
+o cursor em uma parada antecipada. Há um consumidor exclusivo por stream,
+incluindo a conversão Python. `query_timeout` cobre consumo e conversão;
+`stream_idle_timeout` limita a espera do produtor parado sem nova demanda.
+`timeout=None` remove o prazo da consulta, mantendo o de ociosidade configurado.
+Erros finais de cleanup são propagados antes de indicar fim do stream.
 
 A pool repõe `min_idle` após reciclagem ou descarte, dentro de `pool_size`,
 com espera crescente após falha de conexão. O handshake verifica role, charset,
@@ -92,7 +144,7 @@ por operação. Ctrl+C e timeout cancelam a consulta sem encerrar o cliente inte
 o attachment cancelado é descartado após cleanup. O prazo inclui a conversão
 para Python. Sinais e recuperação após cancel foram testados no alvo local.
 
-Ainda faltam streaming/snapshot, pools nomeadas, Arrow/Polars, JSON,
+Ainda faltam a API pública de snapshot, pools nomeadas, Arrow/Polars, JSON,
 DECFLOAT/timezone/BLOB e exportação paralela. Em attach sem resposta ou partição
 de rede, o chamador pode retornar antes da chamada nativa; o slot permanece
 contado até o cleanup terminar. Fechar a pool também respeita um prazo para o

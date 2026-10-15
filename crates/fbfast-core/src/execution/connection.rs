@@ -4,7 +4,7 @@ use crate::{
     statements::cache::Cache,
 };
 use fbfast_native::{AttachOptions, Client, Connection};
-use std::path::Path;
+use std::{path::Path, time::Instant};
 
 /// Worker-owned execution state. Pool/scheduler APIs must not expose this object
 /// to Python or move its native handle to another thread.
@@ -15,10 +15,28 @@ pub struct ExecutionConnection {
     pub(crate) healthy: bool,
     control: Option<fbfast_native::CancelHandle>,
     session: Option<super::SessionInfo>,
+    pub(super) snapshot: Option<super::snapshot::Snapshot>,
 }
 
 impl ExecutionConnection {
     pub fn connect(config: Config, bundled_client: &Path) -> Result<Self, Error> {
+        Self::connect_with_budget(config, bundled_client, None)
+    }
+
+    pub fn connect_before(
+        config: Config,
+        bundled_client: &Path,
+        acquire_end: Instant,
+    ) -> Result<Self, Error> {
+        Self::connect_with_budget(config, bundled_client, Some(acquire_end))
+    }
+
+    fn connect_with_budget(
+        config: Config,
+        bundled_client: &Path,
+        acquire_end: Option<Instant>,
+    ) -> Result<Self, Error> {
+        let budget = super::acquisition::ReadinessBudget::new(&config, acquire_end)?;
         if !config.read_only {
             return Err(Error::unsupported("read_only=False is not supported"));
         }
@@ -51,9 +69,10 @@ impl ExecutionConnection {
                 app_name: &config.app_name,
                 wire_crypt: &config.wire_crypt,
                 wire_compression: config.wire_compression,
-                connect_seconds: config.connect_timeout.ceil() as u32,
+                connect_seconds: budget.native_seconds()?,
             },
-        )?;
+        )
+        .map_err(|error| budget.classify(error.into()))?;
         let mut connection = Self {
             native,
             config,
@@ -61,10 +80,18 @@ impl ExecutionConnection {
             healthy: true,
             control: None,
             session: None,
+            snapshot: None,
         };
-        match connection.verify_session() {
+        match budget
+            .check()
+            .and_then(|_| connection.verify_session(budget.end))
+            .and_then(|info| {
+                budget.check()?;
+                Ok(info)
+            }) {
             Ok(info) => connection.session = Some(info),
-            Err(mut error) => {
+            Err(error) => {
+                let mut error = budget.classify(error);
                 if let Err(cleanup) = connection.close() {
                     error.cleanup.push(cleanup);
                 }

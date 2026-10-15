@@ -9,6 +9,14 @@ use std::{
 };
 
 pub(super) enum Work {
+    Stream {
+        sql: String,
+        params: Vec<Value>,
+        batch_rows: u32,
+        unique_names: bool,
+        timeout: Option<f64>,
+        producer: super::stream_worker::Producer,
+    },
     Rows {
         sql: String,
         params: Vec<Value>,
@@ -34,6 +42,7 @@ impl Work {
     pub fn timeout(&self) -> Option<f64> {
         match self {
             Self::Rows { timeout, .. }
+            | Self::Stream { timeout, .. }
             | Self::Explain { timeout, .. }
             | Self::ClearCache { timeout } => *timeout,
             _ => None,

@@ -1,6 +1,12 @@
+mod cleanup;
 mod connection;
+mod cursor;
 mod handshake;
 mod query;
+mod snapshot;
+mod streaming;
 pub use connection::ExecutionConnection;
 pub use handshake::SessionInfo;
+pub use streaming::{BatchConsumer, StreamSummary};
+mod acquisition;
 pub mod control;

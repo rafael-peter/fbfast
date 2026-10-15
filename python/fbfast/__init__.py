@@ -26,6 +26,7 @@ from ._native import (
     UnsupportedTypeError,
 )
 from .pool import Pool
+from .stream import AsyncStream, Stream
 
 __version__ = "0.1.0"
 __all__ = [
@@ -42,6 +43,8 @@ __all__ = [
     "PoolError",
     "ForkSafetyError",
     "Pool",
+    "Stream",
+    "AsyncStream",
     "PoolBusyError",
     "PoolClosedError",
     "PoolTimeoutError",

@@ -174,6 +174,9 @@ fn autonomous_deadline_works_without_polling_result() {
 #[test]
 #[ignore = "requires bundled client; scripts/test_native.py runs this"]
 fn unresponsive_attach_remains_counted_after_caller_timeout() {
+    // This test targets a native attach already inside network I/O, not first
+    // process-wide dylib loading consuming its intentionally short acquisition.
+    fbfast_core::runtime::client_info(Path::new(&env::var("FBFAST_TEST_CLIENT").unwrap())).unwrap();
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let mut config = config();
     config.port = listener.local_addr().unwrap().port();

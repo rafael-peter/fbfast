@@ -7,6 +7,7 @@ from typing import Any, cast
 
 from ._bootstrap import _CLIENT_PATH
 from ._native import FirebirdConfig, _Pool
+from .stream import AsyncStream, Stream
 
 
 class _DefaultTimeout:
@@ -54,6 +55,16 @@ class Pool:
 
     def warmup_sync(self) -> None:
         self._core.warmup_sync()
+
+    def stream(self, sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
+               batch_rows: int | None = None, as_dict: bool = False,
+               timeout: float | None | _DefaultTimeout = _DEFAULT) -> Stream:
+        return Stream(self._core, sql, params, batch_rows, as_dict, self._timeout(timeout))
+
+    def stream_async(self, sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
+                     batch_rows: int | None = None, as_dict: bool = False,
+                     timeout: float | None | _DefaultTimeout = _DEFAULT) -> AsyncStream:
+        return AsyncStream(self._core, sql, params, batch_rows, as_dict, self._timeout(timeout))
 
     async def fetch_all_async(
         self, sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,

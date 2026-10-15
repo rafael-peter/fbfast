@@ -5,6 +5,77 @@ from pathlib import Path
 from test_vendor import execute
 
 
+def test_constructor_reads_environment_then_defaults_without_from_env(consumer: Path) -> None:
+    result = execute(
+        consumer,
+        """
+import fbfast, os
+os.environ.update(FB_DATABASE='fixture', FB_USER='reader', FB_PASSWORD='secret',
+                  FB_HOST='from-environment', FB_QUERY_TIMEOUT='12.5',
+                  FB_WIRE_COMPRESSION='yes')
+before = dict(os.environ)
+config = fbfast.FirebirdConfig()
+assert (config.host, config.database, config.user) == ('from-environment', 'fixture', 'reader')
+assert config.query_timeout == 12.5 and config.wire_compression is True
+assert config.port == 3050 and config.pool_size == 8 and config.min_idle == 2
+assert config.wire_crypt == 'required' and config.max_result_rows is None
+assert fbfast.FirebirdConfig(host='explicit').host == 'explicit'
+del os.environ['FB_HOST']
+assert fbfast.FirebirdConfig().host == 'localhost'
+os.environ['FB_HOST'] = 'from-environment'
+assert dict(os.environ) == before
+""",
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_constructor_requires_credentials_in_some_source(consumer: Path) -> None:
+    result = execute(
+        consumer,
+        """
+import fbfast, os
+base = dict(FB_DATABASE='fixture', FB_USER='reader', FB_PASSWORD='secret-marker')
+for missing in base:
+    os.environ.update(base)
+    del os.environ[missing]
+    try:
+        fbfast.FirebirdConfig()
+    except fbfast.ConfigurationError as exc:
+        assert missing.removeprefix('FB_').lower() in str(exc)
+        assert 'secret-marker' not in str(exc)
+    else:
+        raise AssertionError(f'{missing} silently defaulted')
+""",
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_invalid_environment_is_not_absent_and_explicit_values_win(consumer: Path) -> None:
+    (consumer / ".env").write_text("FB_HOST=from-file\nFB_PORT=3051\n")
+    result = execute(
+        consumer,
+        """
+import fbfast, os
+os.environ.update(FB_DATABASE='fixture', FB_USER='reader', FB_PASSWORD='secret',
+                  FB_HOST='', FB_PORT='invalid')
+try:
+    fbfast.FirebirdConfig()
+except fbfast.ConfigurationError:
+    pass
+else:
+    raise AssertionError('invalid environment fell back to file/default')
+config = fbfast.FirebirdConfig(host='explicit', port=3053)
+assert config.host == 'explicit' and config.port == 3053
+del os.environ['FB_HOST']
+del os.environ['FB_PORT']
+config = fbfast.FirebirdConfig(env_file=False)
+assert config.host == 'localhost' and config.port == 3050
+assert config.database == 'fixture'
+""",
+    )
+    assert result.returncode == 0, result.stderr
+
+
 def test_config_precedence_and_no_environment_mutation(consumer: Path) -> None:
     (consumer / ".env").write_text(
         "FB_DATABASE=from_file\nFB_USER=reader\nFB_PASSWORD=secret-marker\n"

@@ -22,6 +22,64 @@ pub struct Pending {
 }
 
 impl Pending {
+    pub(super) fn try_result(&mut self) -> Result<Option<Output>, Error> {
+        if self.pid != std::process::id() {
+            return Err(fork_error());
+        }
+        match self.receiver.as_ref().expect("live receiver").try_recv() {
+            Ok(result) => {
+                self.finished = true;
+                result.map(Some)
+            }
+            Err(flume::TryRecvError::Empty) => Ok(None),
+            Err(flume::TryRecvError::Disconnected) => {
+                self.finished = true;
+                Err(Error::new(
+                    ErrorKind::PoolClosed,
+                    "worker",
+                    "Native worker stopped without a result",
+                ))
+            }
+        }
+    }
+
+    pub(super) fn check_waiting(&self) -> Result<(), Error> {
+        if self.pid != std::process::id() {
+            return Err(fork_error());
+        }
+        let started = *self
+            .progress
+            .as_ref()
+            .expect("live progress")
+            .started
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let error = match started {
+            None if Instant::now() >= self.acquire_deadline => Some(Error::new(
+                ErrorKind::PoolTimeout,
+                "acquire",
+                "Pool acquisition deadline expired",
+            )),
+            Some(start)
+                if self
+                    .timeout
+                    .is_some_and(|seconds| start.elapsed().as_secs_f64() >= seconds) =>
+            {
+                Some(Error::new(
+                    ErrorKind::QueryTimeout,
+                    "query",
+                    "Query deadline expired; native cleanup may still be pending",
+                ))
+            }
+            _ => None,
+        };
+        if let Some(error) = error {
+            self.cancel(true);
+            Err(error)
+        } else {
+            Ok(())
+        }
+    }
     pub(super) fn detach(mut self) {
         // Maintenance has no caller, but remains owned/counted by its worker.
         self.finished = true;

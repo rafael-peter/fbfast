@@ -1,4 +1,7 @@
-use super::ExecutionConnection;
+use super::{
+    control::{Cancellation, QueryOptions},
+    ExecutionConnection,
+};
 use crate::{
     decode::Value,
     error::{Error, ErrorKind},
@@ -29,13 +32,26 @@ pub struct SessionInfo {
 }
 
 impl ExecutionConnection {
-    pub(crate) fn verify_session(&mut self) -> Result<SessionInfo, Error> {
+    pub(crate) fn verify_session(
+        &mut self,
+        deadline: std::time::Instant,
+    ) -> Result<SessionInfo, Error> {
         // Internal validation has a small fixed budget independent of the user's
         // materialized-result quota. Even max_result_bytes=1 must allow attach.
         let limits = (self.config.max_result_rows, self.config.max_result_bytes);
         self.config.max_result_rows = Some(1);
         self.config.max_result_bytes = Some(64 * 1024);
-        let result = self.fetch_rows(SESSION_SQL, &[], true, self.config.query_timeout);
+        let result = self.fetch_with(
+            SESSION_SQL,
+            &[],
+            &QueryOptions {
+                first: true,
+                unique_names: false,
+                deadline: Some(deadline),
+                cancellation: &Cancellation::default(),
+                cleaning: &|| Ok(false),
+            },
+        );
         (self.config.max_result_rows, self.config.max_result_bytes) = limits;
         let result = result?;
         let row = result

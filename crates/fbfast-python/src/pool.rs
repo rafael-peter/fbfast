@@ -15,6 +15,28 @@ pub struct PyPool {
 
 #[pymethods]
 impl PyPool {
+    #[pyo3(signature = (sql, params=None, *, batch_rows=None, as_dict=false, timeout=None))]
+    fn stream(
+        &self,
+        py: Python<'_>,
+        sql: String,
+        params: Option<&Bound<'_, PyAny>>,
+        batch_rows: Option<u32>,
+        as_dict: bool,
+        timeout: Option<f64>,
+    ) -> PyResult<crate::stream::PyStream> {
+        self.inner.stats().map_err(from_core)?;
+        let params = Converter::new(py)?.params(params)?;
+        Ok(crate::stream::PyStream {
+            core: self
+                .inner
+                .stream(sql, params, batch_rows, as_dict, timeout)
+                .map_err(from_core)?,
+            as_dict,
+            close_timeout: self.close_timeout,
+            delivery: self.delivery.clone(),
+        })
+    }
     #[new]
     fn new(config: &PyConfig, client_path: PathBuf) -> Self {
         Self {
@@ -272,5 +294,6 @@ fn internal() -> PyErr {
 }
 
 pub fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    module.add_class::<crate::stream::PyStream>()?;
     module.add_class::<PyPool>()
 }

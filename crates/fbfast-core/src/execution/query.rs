@@ -1,8 +1,8 @@
 use super::control::{deadline, Cancellation, QueryOptions};
-use super::ExecutionConnection;
+use super::{cursor::check_deadline, ExecutionConnection};
 use crate::{
     decode::{bind, DecodePlan, Value},
-    error::{Error, ErrorKind},
+    error::Error,
     sinks::rows::Rows,
     statements::{cache::Entry, validate_read_query},
 };
@@ -40,45 +40,18 @@ impl ExecutionConnection {
             if options.unique_names {
                 result.require_unique_names()?;
             }
-            let parameters = bind::encode(&entry.input, params)?;
-            options.cancellation.check()?;
-            check_deadline(deadline)?;
-            let native_timeout = deadline
-                .map(|end| {
-                    end.saturating_duration_since(Instant::now())
-                        .as_millis()
-                        .clamp(1, u32::MAX as u128) as u32
-                })
-                .unwrap_or(0);
-            connection
-                .native
-                .open_cursor(entry.id, &parameters, native_timeout)?;
-            loop {
-                options.cancellation.check()?;
-                check_deadline(deadline)?;
-                let batch = connection.native.fetch(
-                    if options.first {
-                        1
-                    } else {
-                        connection.config.fetch_size
-                    },
-                    connection.config.batch_bytes as usize,
-                )?;
-                for index in 0..batch.len() {
-                    let row = batch.row(index).ok_or_else(|| {
-                        Error::new(
-                            ErrorKind::DataConversion,
-                            "fetch",
-                            "Native batch index invalid",
-                        )
-                    })?;
-                    result.push(&entry.plan, row, &connection.config)?;
-                    check_deadline(deadline)?;
-                }
-                if options.first || batch.eof {
-                    break;
-                }
-            }
+            connection.pump(
+                entry,
+                params,
+                options,
+                deadline,
+                if options.first {
+                    1
+                } else {
+                    connection.config.fetch_size
+                },
+                &mut result,
+            )?;
             Ok(result)
         })
     }
@@ -115,20 +88,30 @@ impl ExecutionConnection {
         })
     }
 
-    fn operation<T>(
+    pub(super) fn operation<T>(
         &mut self,
         sql: &str,
         options: &QueryOptions<'_>,
         action: impl FnOnce(&mut Self, &Entry, Option<Instant>) -> Result<T, Error>,
     ) -> Result<T, Error> {
-        self.check()?;
-        validate_read_query(sql)?;
-        options.cancellation.check()?;
-        let deadline = options.deadline;
-        check_deadline(deadline)?;
-        if let Err(error) = self.native.begin(false, self.config.lock_timeout, None) {
-            self.healthy = false;
-            return Err(error.into());
+        let deadline = self.operation_deadline(options.deadline);
+        let validation = self
+            .check()
+            .and_then(|_| validate_read_query(sql))
+            .and_then(|_| options.cancellation.check())
+            .and_then(|_| check_deadline(deadline));
+        if let Err(error) = validation {
+            return if self.snapshot.is_some() {
+                self.finish_operation(Err(error), None, options)
+            } else {
+                Err(error)
+            };
+        }
+        if self.snapshot.is_none() {
+            if let Err(error) = self.native.begin(false, self.config.lock_timeout, None) {
+                self.healthy = false;
+                return Err(error.into());
+            }
         }
         let (result, entry) = match self.prepare_entry(sql) {
             Ok(entry) => {
@@ -146,64 +129,7 @@ impl ExecutionConnection {
             }
             Err(error) => (Err(error), None),
         };
-        let mut cleanup = Vec::new();
-        match (options.cleaning)() {
-            Ok(true) => {
-                self.healthy = false;
-                if let Err(error) = self.native.disable_cancel() {
-                    cleanup.push(error.into());
-                }
-            }
-            Err(error) => cleanup.push(error),
-            Ok(false) => (),
-        }
-        if let Err(e) = self.native.close_cursor() {
-            cleanup.push(Error::from(e));
-        }
-        if let Err(e) = self.native.rollback() {
-            cleanup.push(Error::from(e));
-        }
-        if cleanup.is_empty() {
-            if let Err(e) = self.native.reset() {
-                cleanup.push(Error::from(e));
-            }
-        }
-        if cleanup.is_empty() {
-            if let Some(entry) = entry {
-                if let Err(error) = self.cache.put(
-                    entry,
-                    &mut self.native,
-                    self.config.statement_cache_size,
-                    self.config.statement_cache_bytes,
-                ) {
-                    cleanup.push(error);
-                }
-            }
-        }
-        if !cleanup.is_empty() {
-            self.healthy = false;
-        }
-        match result {
-            Err(mut error) => {
-                if matches!(error.kind, ErrorKind::Cancelled | ErrorKind::QueryTimeout) {
-                    if let Err(reason) = options.cancellation.check() {
-                        error.kind = reason.kind;
-                    }
-                }
-                error.cleanup.extend(cleanup);
-                Err(error)
-            }
-            Ok(value) if cleanup.is_empty() => Ok(value),
-            Ok(_) => {
-                let mut error = Error::new(
-                    ErrorKind::Cleanup,
-                    "cleanup",
-                    "Query succeeded but connection cleanup failed",
-                );
-                error.cleanup = cleanup;
-                Err(error)
-            }
-        }
+        self.finish_operation(result, entry, options)
     }
 
     fn prepare_entry(&mut self, sql: &str) -> Result<Entry, Error> {
@@ -231,15 +157,4 @@ impl ExecutionConnection {
             }
         }
     }
-}
-
-fn check_deadline(deadline: Option<Instant>) -> Result<(), Error> {
-    if deadline.is_some_and(|end| Instant::now() >= end) {
-        return Err(Error::new(
-            ErrorKind::QueryTimeout,
-            "query",
-            "Query deadline expired",
-        ));
-    }
-    Ok(())
 }

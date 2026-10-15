@@ -56,6 +56,7 @@ pub(super) fn run(
             Command::Close => break,
         };
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let mut acquire_deadline = job.acquire_deadline;
             job.progress.cancellation.check()?;
             if let Some(inner) = inner.upgrade() {
                 if inner
@@ -84,11 +85,21 @@ pub(super) fn run(
                     let millis =
                         (50u64 << failures.min(5)) + ((index as u64 * 37 + job.id * 17) % 53);
                     std::thread::sleep(Duration::from_millis(millis));
+                    if matches!(job.work, Work::KeepWarm) {
+                        // No caller waits for background maintenance. Backoff is
+                        // separate from each retry's connection readiness budget.
+                        acquire_deadline =
+                            Instant::now() + Duration::from_secs_f64(config.acquire_timeout);
+                    }
                 }
-                if Instant::now() >= job.acquire_deadline {
+                if Instant::now() >= acquire_deadline {
                     return Err(acquire_timeout());
                 }
-                connection = Some(ExecutionConnection::connect(config.clone(), &client)?);
+                connection = Some(ExecutionConnection::connect_before(
+                    config.clone(),
+                    &client,
+                    acquire_deadline,
+                )?);
                 born = Instant::now();
                 lifetime = config.max_lifetime
                     * (0.9 + ((index as u64 * 37 + job.id % 100) % 100) as f64 / 1000.0);
@@ -107,7 +118,7 @@ pub(super) fn run(
                 connection.ping()?;
             }
             job.progress.cancellation.check()?;
-            if Instant::now() >= job.acquire_deadline {
+            if Instant::now() >= acquire_deadline {
                 return Err(acquire_timeout());
             }
             if controller.is_none() {
@@ -138,7 +149,7 @@ pub(super) fn run(
                 end,
                 job.progress.clone(),
             );
-            let mut result = execute(connection, &job, end, &|| {
+            let mut result = execute(&inner, connection, &job, end, &|| {
                 phase(&inner, index, Phase::Cleaning);
                 lease.finish()
             });
@@ -201,7 +212,7 @@ pub(super) fn run(
         }
         let native_timeout = result
             .as_ref()
-            .is_err_and(|e| e.kind == ErrorKind::QueryTimeout)
+            .is_err_and(|e| matches!(e.kind, ErrorKind::QueryTimeout | ErrorKind::PoolTimeout))
             && job.progress.cancellation.timeout();
         if let Some(inner) = inner.upgrade() {
             let mut state = inner.state.lock().unwrap_or_else(|e| e.into_inner());
@@ -259,6 +270,7 @@ pub(super) fn run(
 }
 
 fn execute(
+    inner: &Weak<Inner>,
     connection: &mut ExecutionConnection,
     job: &Job,
     end: Option<Instant>,
@@ -272,6 +284,33 @@ fn execute(
         cleaning,
     };
     match &job.work {
+        Work::Stream {
+            sql,
+            params,
+            batch_rows,
+            unique_names,
+            producer,
+            ..
+        } => {
+            let mut consumer = super::stream_worker::Consumer {
+                producer,
+                inner,
+                cancellation: &job.progress.cancellation,
+                prefetch: connection.config.prefetch_batches,
+                idle_timeout: connection.config.stream_idle_timeout,
+                produced: 0,
+                opened: false,
+            };
+            connection
+                .stream_with(
+                    sql,
+                    params,
+                    *batch_rows,
+                    &options(false, *unique_names),
+                    &mut consumer,
+                )
+                .map(|_| Output::Ready)
+        }
         Work::Rows {
             sql,
             params,

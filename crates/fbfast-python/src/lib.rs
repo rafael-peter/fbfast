@@ -6,6 +6,7 @@ mod config;
 mod errors;
 mod pool;
 mod runtime;
+mod stream;
 mod values;
 
 #[pymodule]

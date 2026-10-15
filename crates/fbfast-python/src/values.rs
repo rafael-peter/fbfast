@@ -1,4 +1,4 @@
-//! Python objects exist only at the binding boundary, after native cleanup.
+//! Python objects exist only at the binding boundary, from owned native batches.
 use crate::errors::from_core;
 use fbfast_core::pool::DeliveryBudget;
 use fbfast_core::{

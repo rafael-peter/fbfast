@@ -8,6 +8,13 @@ use pyo3::{
 };
 use serde_json::{Number, Value};
 
+/// Configuração imutável; FirebirdConfig() já lê FB_* e .env automaticamente.
+///
+/// Precedência por campo: argumento explícito > ambiente > .env > padrão.
+/// database, user e password não têm padrão e são obrigatórios em alguma fonte.
+/// None explícito prevalece sobre o ambiente nos campos opcionais.
+/// env_file=False desativa apenas o arquivo .env, mantendo a leitura de FB_*.
+/// Construir a configuração não conecta ao banco nem modifica os.environ.
 #[pyclass(name = "FirebirdConfig", module = "fbfast", frozen)]
 pub struct PyConfig {
     pub inner: Config,
@@ -24,6 +31,7 @@ impl PyConfig {
         })
     }
 
+    /// Atalho para prefixo personalizado; FirebirdConfig() já usa FB_ por padrão.
     #[classmethod]
     #[pyo3(signature = (prefix = "FB_", **kwargs))]
     fn from_env(

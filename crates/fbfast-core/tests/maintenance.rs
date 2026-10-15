@@ -147,3 +147,43 @@ fn failed_background_open_uses_bounded_backoff_and_shutdown() {
     assert!(stats.opening <= 1);
     pool.close(Duration::from_secs(5)).unwrap();
 }
+
+#[test]
+#[ignore = "requires bundled client; scripts/test_native.py runs this"]
+fn background_retry_budget_starts_after_backoff() {
+    use std::{
+        net::TcpListener,
+        sync::{
+            atomic::{AtomicBool, AtomicUsize, Ordering},
+            Arc,
+        },
+    };
+    fbfast_core::runtime::client_info(Path::new(&env::var("FBFAST_TEST_CLIENT").unwrap())).unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let mut options = config();
+    options.port = listener.local_addr().unwrap().port();
+    options.acquire_timeout = 0.05;
+    let stop = Arc::new(AtomicBool::new(false));
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let (server_stop, server_attempts) = (stop.clone(), attempts.clone());
+    let server = thread::spawn(move || {
+        while !server_stop.load(Ordering::Acquire) {
+            if let Ok((socket, _)) = listener.accept() {
+                server_attempts.fetch_add(1, Ordering::Release);
+                drop(socket);
+            } else {
+                thread::sleep(Duration::from_millis(1));
+            }
+        }
+    });
+    let pool = pool(options);
+    assert!(wait(&mut pool.warmup().unwrap().remove(0)).is_err());
+    until(|| pool.stats().unwrap().maintenance_failures > 0);
+    let previous = attempts.load(Ordering::Acquire);
+    // Backoff exceeds acquire_timeout; a fresh internal attempt must still reach TCP.
+    until(|| attempts.load(Ordering::Acquire) > previous);
+    pool.close(Duration::from_secs(5)).unwrap();
+    stop.store(true, Ordering::Release);
+    server.join().unwrap();
+}

@@ -8,6 +8,8 @@ mod maintenance;
 mod pending;
 mod scheduler;
 mod state;
+mod stream;
+mod stream_worker;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
@@ -26,6 +28,7 @@ pub use pending::Pending;
 pub use state::Stats;
 use state::{Inner, Work};
 use std::{path::PathBuf, sync::Arc, time::Duration};
+pub use stream::{Stream, StreamAction, StreamItem, StreamWait};
 
 #[derive(Debug)]
 pub enum Output {
@@ -92,6 +95,36 @@ impl Pool {
     pub fn warmup(&self) -> Result<Vec<Pending>, Error> {
         let inner = self.inner()?;
         inner.submit_warmup()
+    }
+    pub fn stream(
+        &self,
+        sql: String,
+        params: Vec<Value>,
+        batch_rows: Option<u32>,
+        unique_names: bool,
+        timeout: Option<f64>,
+    ) -> Result<Stream, Error> {
+        crate::statements::validate_read_query(&sql)?;
+        crate::execution::control::deadline(timeout)?;
+        let inner = self.inner()?;
+        let batch_rows = batch_rows.unwrap_or(inner.config.fetch_size);
+        if batch_rows == 0 {
+            return Err(Error::config("batch_rows", "must be positive"));
+        }
+        let (sender, receiver) = flume::bounded(inner.config.prefetch_batches as usize + 1);
+        let demand = Arc::new(stream_worker::Demand::default());
+        let pending = inner.submit(Work::Stream {
+            sql,
+            params,
+            batch_rows,
+            unique_names,
+            timeout,
+            producer: stream_worker::Producer {
+                sender,
+                demand: demand.clone(),
+            },
+        })?;
+        Ok(Stream::new(pending, receiver, demand))
     }
     pub fn clear_statement_cache(&self, timeout: Option<f64>) -> Result<Pending, Error> {
         crate::execution::control::deadline(timeout)?;

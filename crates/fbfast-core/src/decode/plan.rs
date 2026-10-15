@@ -13,6 +13,26 @@ pub struct DecodePlan {
 }
 
 impl DecodePlan {
+    /// Upper bound for one row of the currently supported fixed/text scalars.
+    /// This accounts for decoded Value storage, not just wire message length.
+    pub fn row_capacity_bytes(&self) -> Result<usize, Error> {
+        self.schema.columns.iter().try_fold(0usize, |sum, column| {
+            let payload = if matches!(column.sql_type, 452 | 448) {
+                column.length as usize
+            } else {
+                0
+            };
+            sum.checked_add(std::mem::size_of::<Value>())
+                .and_then(|sum| sum.checked_add(payload))
+                .ok_or_else(|| {
+                    Error::new(
+                        ErrorKind::ResultLimit,
+                        "describe",
+                        "Decoded row size overflow",
+                    )
+                })
+        })
+    }
     pub fn new(schema: Metadata, config: &Config) -> Result<Self, Error> {
         let none_as_utf8 = match config.fallback_charset.as_deref() {
             None => false,

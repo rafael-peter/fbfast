@@ -22,7 +22,7 @@ pub enum Form {
     Plan,
 }
 
-fn admission(gate: &Arc<Semaphore>) -> PyResult<Arc<OwnedSemaphorePermit>> {
+pub(crate) fn admission(gate: &Arc<Semaphore>) -> PyResult<Arc<OwnedSemaphorePermit>> {
     gate.clone().try_acquire_owned().map(Arc::new).map_err(|_| {
         from_core(Error::new(
             ErrorKind::PoolBusy,
