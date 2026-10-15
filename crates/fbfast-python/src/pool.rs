@@ -202,7 +202,10 @@ impl PyPool {
             .clear_statement_cache(timeout)
             .map_err(from_core)?;
         match wait(py, &mut pending)? {
-            Output::Ready => Ok(()),
+            Output::Ready => pending
+                .delivery_budget()
+                .and_then(|budget| budget.check_phase("cache_clear"))
+                .map_err(from_core),
             _ => Err(internal()),
         }
     }

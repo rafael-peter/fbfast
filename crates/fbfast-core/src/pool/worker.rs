@@ -226,11 +226,7 @@ pub(super) fn run(
             }
             last_used = Instant::now();
             if !closing {
-                state.slots[index].phase = if connection.is_some() {
-                    Phase::Idle
-                } else {
-                    Phase::Dormant
-                };
+                super::cache_invalidation::available(&mut state, index, connection.is_some());
                 state.slots[index].idle_since = last_used;
                 inner.dispatch(&mut state);
             }
@@ -256,6 +252,7 @@ pub(super) fn run(
         }
         state.slots[index].sender = None;
         state.slots[index].phase = Phase::Closed;
+        super::cache_invalidation::empty(&mut state, index);
         inner.dispatch(&mut state);
         inner.changed.notify_all();
     }

@@ -30,11 +30,7 @@ pub(super) fn idle_cache(
     if state.closing {
         return true;
     }
-    state.slots[index].phase = if connection.is_some() {
-        Phase::Idle
-    } else {
-        Phase::Dormant
-    };
+    super::cache_invalidation::available(&mut state, index, connection.is_some());
     state.slots[index].idle_since = Instant::now();
     owner.dispatch(&mut state);
     owner.changed.notify_all();

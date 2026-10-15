@@ -1,5 +1,7 @@
 //! Bounded native workers. Construction performs no I/O and creates no threads.
 mod cache_invalidation;
+#[cfg(test)]
+mod cache_tests;
 mod controller;
 mod delivery;
 mod maintenance;

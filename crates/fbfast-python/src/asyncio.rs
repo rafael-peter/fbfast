@@ -127,7 +127,10 @@ pub fn clear_cache<'py>(
         let _permit = permit;
         let _cancel = CancelOnDrop(control.clone());
         match wait(&mut pending, &control).await? {
-            Output::Ready => Ok(()),
+            Output::Ready => pending
+                .delivery_budget()
+                .and_then(|budget| budget.check_phase("cache_clear"))
+                .map_err(from_core),
             _ => Err(PyRuntimeError::new_err(
                 "Unexpected cache invalidation output",
             )),

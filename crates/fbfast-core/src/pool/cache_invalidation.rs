@@ -108,6 +108,34 @@ pub(super) fn closed(inner: &Weak<Inner>, index: usize, error: Option<&Error>) {
     acknowledge(inner, index, u64::MAX, error);
 }
 
+/// Publish availability and observe the latest epoch in the same critical section.
+/// A new request can arrive after service() acknowledged but before the owner
+/// returns its slot. It must receive another command even if no query follows.
+pub(super) fn available(state: &mut State, index: usize, connected: bool) {
+    let slot = &mut state.slots[index];
+    if connected && slot.cache_epoch < state.cache_epoch {
+        slot.phase = Phase::Cleaning;
+        if let Some(sender) = &slot.sender {
+            let _ = sender.try_send(Command::ClearCache);
+        }
+    } else {
+        slot.phase = if connected {
+            Phase::Idle
+        } else {
+            Phase::Dormant
+        };
+        if !connected {
+            empty(state, index);
+        }
+    }
+}
+
+/// Caller has proved that the native connection is gone and holds state locked.
+pub(super) fn empty(state: &mut State, index: usize) {
+    state.slots[index].cache_epoch = state.cache_epoch;
+    complete(state);
+}
+
 fn acknowledge(inner: &Weak<Inner>, index: usize, required: u64, error: Option<&Error>) {
     if let Some(owner) = inner.upgrade() {
         let mut state = owner.state.lock().unwrap_or_else(|e| e.into_inner());

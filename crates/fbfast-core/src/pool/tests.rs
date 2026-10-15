@@ -6,7 +6,7 @@ use crate::config::{EnvFile, Inputs};
 use serde_json::json;
 use std::{collections::BTreeMap, path::Path};
 
-fn occupied() -> Arc<Inner> {
+pub(super) fn occupied() -> Arc<Inner> {
     let input: Inputs = [
         ("database".into(), json!("unused")),
         ("user".into(), json!("unused")),

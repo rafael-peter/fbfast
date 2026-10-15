@@ -32,6 +32,9 @@ impl DeliveryBudget {
         }
     }
     pub fn check(&self) -> Result<(), Error> {
+        self.check_phase("python_conversion")
+    }
+    pub fn check_phase(&self, phase: &'static str) -> Result<(), Error> {
         if self.pid != std::process::id() {
             return Err(fork_error());
         }
@@ -48,8 +51,8 @@ impl DeliveryBudget {
             }
             return Err(Error::new(
                 ErrorKind::QueryTimeout,
-                "python_conversion",
-                "Query deadline expired during result materialization",
+                phase,
+                "Operation deadline expired before result delivery",
             ));
         }
         self.progress.cancellation.check()

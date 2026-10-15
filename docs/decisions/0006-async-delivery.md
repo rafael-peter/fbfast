@@ -49,6 +49,11 @@ heartbeats, 287 deles durante materialização. A causa do pico sob concorrênci
 não foi isolada; testes sob carga controlada continuam pendentes. Não se declara
 garantia de 150 ms em qualquer carga do sistema.
 
+No checkpoint de manutenção `15b7346105d586188cf4c6bffe43f7535f5455c15fc03c7d86b825911db75140`,
+a execução isolada registrou máximo de 20,882 ms, 2.850 heartbeats (285 durante
+materialização) e maior pausa de GC de 8,499 ms. Os números anteriores são
+históricos; a variação não é tratada como ganho ou regressão comprovada.
+
 Continuam pendentes streaming/snapshot, HTTP lifecycle, registry, métricas
 completas e comparação equivalente contra outros drivers. O teste local não
 homologa outros loops/interpretadores nem todos os cenários de shutdown/falha.

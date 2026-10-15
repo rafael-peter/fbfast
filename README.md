@@ -25,9 +25,9 @@ do repositório público ainda não foram definidos.
 Quando o repositório estiver disponível, substitua os marcadores abaixo:
 
 ```sh
-uv add "git+https://github.com/SEU_USUARIO/SEU_REPO.git" --rev COMMIT
+uv add "git+https://github.com/rafael-peter/fbfast.git" --rev COMMIT
 # Alternativa sem registrar dependência no pyproject.toml:
-pip install "fbfast @ git+https://github.com/SEU_USUARIO/SEU_REPO.git@COMMIT"
+pip install "fbfast @ git+https://github.com/rafael-peter/fbfast.git@COMMIT"
 ```
 
 Fixar um commit ou uma tag evita atualizar a biblioteca implicitamente a cada
@@ -73,6 +73,19 @@ As consultas e `explain` têm variantes `*_async`. Use `await pool.warmup()`,
 executor, com entrega vinculada ao loop da chamada; não exige loop global.
 Materialização Python ocorre em workers limitados com liberação periódica do
 GIL, incluindo cancelamento e deadline durante a conversão.
+
+A pool repõe `min_idle` após reciclagem ou descarte, dentro de `pool_size`,
+com espera crescente após falha de conexão. O handshake verifica role, charset,
+timezone e isolamento efetivos antes de disponibilizar o attachment. Compressão
+é negociada com o servidor; pedir compressão não comprova que ela esteja ativa.
+
+`pool.clear_statement_cache_sync()` e `await pool.clear_statement_cache()`
+invalidam os statements de todos os attachments sem interromper cursores em uso.
+O prazo padrão é `query_timeout`; `timeout=None` remove esse prazo. Cancelar ou
+esgotar a espera não desfaz a invalidação solicitada: o worker a conclui quando
+o cursor termina. Antes de migrar schema, pare novas consultas, aguarde as atuais
+e limpe os caches, ou feche e recrie a pool; statements preparados podem reter
+dependências de metadata. A biblioteca não executa migrações.
 
 Cancelamento ativo usa uma thread de controle limitada por worker, com geração
 por operação. Ctrl+C e timeout cancelam a consulta sem encerrar o cliente inteiro;

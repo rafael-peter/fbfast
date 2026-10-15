@@ -15,17 +15,21 @@ não substitui nem reduz os critérios originais.
 
 Validações executadas no estágio atual:
 
-- 19 testes Rust unitários/propriedades: config, SQL, versão, precisão/limites,
-  fila FIFO limitada, remoção por cancelamento e retenção de slot ocupado.
-- 11 testes de integração Rust/C++ no Firebird 5.0.3 descartável: TPB efetivo,
+- 23 testes Rust unitários/propriedades: config, SQL, versão, precisão/limites,
+  fila FIFO limitada, remoção por cancelamento, retenção de slot ocupado e
+  janelas de concorrência da invalidação de cache.
+- 16 testes de integração Rust/C++ no Firebird 5.0.3 descartável: TPB efetivo,
   bind, status, ownership, reset/cache, precisão, role, limites, cleanup,
-  cancel real por geração, deadline autônomo, FIFO/teto e panic do worker.
+  cancel real por geração, deadline autônomo, FIFO/teto, panic do worker,
+  handshake efetivo, reposição de min_idle, lifetime e backoff.
 - 14 testes Python de empacotamento/config por cópia externa.
-- 22 testes Python reais: escalares/Decimal/INT128/datas, erros, aliases,
+- 26 testes Python reais: escalares/Decimal/INT128/datas, erros, aliases,
   explain parametrizado, cleanup, role, destrutor após fork e 96 consultas
   concorrentes com teto de 3 attachments. Incluem Ctrl+C, prazo durante conversão
   Python, timeout nativo, close durante attach pendente e seis subprocessos
   cobrindo SIGINT/SIGTERM padrão, ignorado e personalizado.
+- Cache coordenado sync/async: dois attachments aquecidos, invalidação em ambos,
+  coalescência, timeout e cancelamento sem interromper o cursor de outro chamador.
 - Async usa o mesmo scheduler e ponte PyO3 consolidada; testa fila cheia,
   cancel antes/durante/depois, materialização, deadlines, loops sucessivos,
   loop fechado sem callback tardio e um milhão de tuplas com heartbeat.
@@ -46,28 +50,32 @@ nativo comprovou o lifecycle descrito em `decisions/0002-reset-cache-prototype.m
 Agora há consultas via API Python comprovadas, mas nenhuma meta de desempenho
 comparativo foi atingida/declarada.
 
-Pendências conhecidas desta base antes de homologar pool/lifecycle: manutenção
-do piso min_idle após reciclagem; mais cenários de conexão interrompida;
-invalidação coordenada de cache; métricas de durações; handshake de charset e
-timezone efetivos. Não há BLOB,
-DECFLOAT ou timezone, e o executor atual exige UTF8. Os critérios restantes de
+Handshake, reposição de min_idle e invalidação coordenada estão descritos em
+`decisions/0007-pool-maintenance.md`. Pendências antes de homologar pool/lifecycle:
+limitar attach/handshake ao orçamento restante de aquisição, mais cenários de
+conexão interrompida e métricas de durações. A fixture padrão negociou criptografia,
+mas não compressão, mesmo quando solicitada; a matriz de capacidades segue aberta.
+Não há BLOB, DECFLOAT ou tipos SQL com timezone, e o executor atual exige UTF8.
+Os critérios restantes de
 P3–P6 continuam abertos, incluindo sinks nativos e benchmarks equivalentes.
 
 Cancelamento e política de sinais estão descritos em
-`decisions/0005-cancellation-signals.md`. O probe de dez amostras no build atual
+`decisions/0005-cancellation-signals.md`. O probe de dez amostras no build anterior
+`cb0e7a9d04874b6d81a48d56320cac3f3f4867dd6ef254f7550db50b173bd647`
 registrou mediana de 8,366 ms até o chamador receber Ctrl+C e 12,307 ms até a
 liberação observada do slot; máximos de 13,787 e 17,618 ms. São medidas locais
 diagnósticas, com polling de 1 ms, sem promessa para partições de rede ou
 comparação de desempenho com outros drivers. Amostras em
 `benchmarks/results/20261015T121644Z-cancel.json`.
 
-No checkpoint async atual, o heartbeat de um milhão de tuplas teve máximo de
-8,230 ms em execução isolada (3.010 amostras; 287 durante conversão Python).
+No checkpoint atual, o heartbeat de um milhão de tuplas teve máximo de
+20,882 ms em execução isolada (2.850 amostras; 285 durante conversão Python;
+maior pausa de GC medida: 8,499 ms).
 Uma validação concorrente anterior falhou com pico de 269,345 ms; a causa não
 foi isolada. A fase de responsividade sob carga controlada continua aberta,
 conforme `decisions/0006-async-delivery.md`, sem aumento do limite do teste.
 
-Checkpoint atual: build `cb0e7a9d04874b6d81a48d56320cac3f3f4867dd6ef254f7550db50b173bd647`,
+Checkpoint atual: build `15b7346105d586188cf4c6bffe43f7535f5455c15fc03c7d86b825911db75140`,
 macOS arm64, CPython 3.14, release. Logs locais em `.tools/{unit,integration,
 python-integration,packaging,uv-install,verify,clippy}.log`.
 
