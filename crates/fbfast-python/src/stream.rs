@@ -80,6 +80,11 @@ impl PyStream {
             }
         };
         let result = match &item {
+            StreamItem::Json(json) => {
+                let mut converter = Converter::new(py)?;
+                converter.set_budget(delivery.wait.budget().map_err(from_core)?);
+                Some(converter.bytes(&json.data)?)
+            }
             StreamItem::Batch(rows) => {
                 let mut converter = Converter::new(py)?;
                 converter.set_budget(delivery.wait.budget().map_err(from_core)?);
@@ -117,7 +122,7 @@ impl PyStream {
         pyo3_async_runtimes::tokio::future_into_py_with_locals(py, locals, async move {
             let _cancel = CancelOnDrop(control.clone());
             let item = wait(&mut delivery.wait, &control, end).await?;
-            if let StreamItem::Batch(rows) = item {
+            if matches!(&item, StreamItem::Batch(_) | StreamItem::Json(_)) {
                 tokio::task::spawn_blocking(move || {
                     let _permit = permit;
                     let result = Python::attach(|py| {
@@ -125,7 +130,11 @@ impl PyStream {
                         let mut converter = Converter::new(py)?;
                         converter.set_budget(delivery.wait.budget().map_err(from_core)?);
                         converter.set_async_control(control);
-                        let result = converter.all(&rows, as_dict)?;
+                        let result = match &item {
+                            StreamItem::Batch(rows) => converter.all(rows, as_dict)?,
+                            StreamItem::Json(json) => converter.bytes(&json.data)?,
+                            _ => unreachable!("batch checked before conversion"),
+                        };
                         converter.checkpoint()?;
                         Ok(Some(result))
                     });

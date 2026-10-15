@@ -1,16 +1,13 @@
 use super::{
     controller::Controller,
-    state::{Command, Inner, Job, Phase, Work},
+    state::{Command, Inner, Phase, Work},
     worker_lifecycle::{acquire_timeout, close_connection, phase, retire_idle},
     Output,
 };
 use crate::{
     config::Config,
     error::{Error, ErrorKind},
-    execution::{
-        control::{deadline_from, QueryOptions},
-        ExecutionConnection,
-    },
+    execution::{control::deadline_from, ExecutionConnection},
 };
 use std::{
     path::PathBuf,
@@ -142,6 +139,16 @@ pub(super) fn run(
                     .stats
                     .acquires += 1;
             }
+            if matches!(job.work, Work::Snapshot { .. }) {
+                return super::session_worker::run(
+                    &inner,
+                    index,
+                    connection,
+                    &job,
+                    controller.as_ref().expect("controller initialized"),
+                    end,
+                );
+            }
             let control = connection.begin_control(job.id)?;
             let lease = controller.as_ref().expect("controller initialized").arm(
                 control,
@@ -149,7 +156,7 @@ pub(super) fn run(
                 end,
                 job.progress.clone(),
             );
-            let mut result = execute(&inner, connection, &job, end, &|| {
+            let mut result = super::worker_query::execute(&inner, connection, &job, end, &|| {
                 phase(&inner, index, Phase::Cleaning);
                 lease.finish()
             });
@@ -226,9 +233,9 @@ pub(super) fn run(
             if unhealthy {
                 state.stats.discarded += 1;
             }
-            if let Ok(Output::Rows(rows)) = &result {
-                state.stats.rows += rows.count as u64;
-                state.stats.result_bytes += rows.bytes as u64;
+            if let Some((rows, bytes)) = result.as_ref().ok().and_then(Output::size) {
+                state.stats.rows += rows;
+                state.stats.result_bytes += bytes;
             }
             if let Some(connection) = &mut connection {
                 let (hits, misses) = connection.take_cache_counts();
@@ -242,6 +249,16 @@ pub(super) fn run(
                 inner.dispatch(&mut state);
             }
             inner.changed.notify_all();
+        }
+        if let Work::Snapshot { scope, opened, .. } = &job.work {
+            use std::sync::atomic::Ordering;
+            if let Err(error) = &result {
+                *scope.failure.lock().unwrap_or_else(|e| e.into_inner()) = Some(error.clone());
+                if !scope.ready.load(Ordering::Acquire) {
+                    let _ = opened.try_send(Err(error.clone()));
+                }
+            }
+            scope.ended.store(true, Ordering::Release);
         }
         let _ = job.reply.send(result);
         if closing {
@@ -266,70 +283,5 @@ pub(super) fn run(
         super::cache_invalidation::empty(&mut state, index);
         inner.dispatch(&mut state);
         inner.changed.notify_all();
-    }
-}
-
-fn execute(
-    inner: &Weak<Inner>,
-    connection: &mut ExecutionConnection,
-    job: &Job,
-    end: Option<Instant>,
-    cleaning: &dyn Fn() -> Result<bool, Error>,
-) -> Result<Output, Error> {
-    let options = |first, unique_names| QueryOptions {
-        first,
-        unique_names,
-        deadline: end,
-        cancellation: &job.progress.cancellation,
-        cleaning,
-    };
-    match &job.work {
-        Work::Stream {
-            sql,
-            params,
-            batch_rows,
-            unique_names,
-            producer,
-            ..
-        } => {
-            let mut consumer = super::stream_worker::Consumer {
-                producer,
-                inner,
-                cancellation: &job.progress.cancellation,
-                prefetch: connection.config.prefetch_batches,
-                idle_timeout: connection.config.stream_idle_timeout,
-                produced: 0,
-                opened: false,
-            };
-            connection
-                .stream_with(
-                    sql,
-                    params,
-                    *batch_rows,
-                    &options(false, *unique_names),
-                    &mut consumer,
-                )
-                .map(|_| Output::Ready)
-        }
-        Work::Rows {
-            sql,
-            params,
-            first,
-            unique_names,
-            ..
-        } => connection
-            .fetch_with(sql, params, &options(*first, *unique_names))
-            .map(Output::Rows),
-        Work::Explain { sql, params, .. } => connection
-            .explain_with(sql, params, &options(true, false))
-            .map(Output::Plan),
-        Work::Warmup | Work::KeepWarm => Ok(Output::Ready),
-        Work::ClearCache { .. } => Err(Error::new(
-            ErrorKind::Query,
-            "cache_clear",
-            "Cache invalidation must use the coordinated path",
-        )),
-        #[cfg(test)]
-        Work::Panic => panic!("intentional worker fault for lifecycle test"),
     }
 }

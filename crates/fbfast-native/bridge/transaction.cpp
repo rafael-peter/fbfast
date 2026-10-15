@@ -27,7 +27,7 @@ extern "C" void fbfast_begin(void* handle, uint32_t snapshot, uint32_t lock_seco
 extern "C" void fbfast_rollback(void* handle, FbError* error) noexcept {
     auto* c = static_cast<Connection*>(handle);
     guarded(c, error, [&](auto* status) {
-        require(!c->cursor, "Close cursor before rollback");
+        require(!c->cursor && !c->blob, "Close BLOB and cursor before rollback");
         if (c->transaction) { c->transaction->rollback(status); c->transaction = nullptr; }
     });
 }

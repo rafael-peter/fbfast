@@ -50,7 +50,6 @@ pub struct Config {
     pub fetch_size: u32,
     pub batch_bytes: u64,
     pub prefetch_batches: u32,
-    pub max_result_bytes: Option<u64>,
     pub max_result_rows: Option<u64>,
     pub max_blob_bytes: u64,
     pub query_timeout: Option<f64>,

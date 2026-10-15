@@ -153,6 +153,9 @@ impl Connection {
                 failures.push(error);
             }
         }
+        if let Err(e) = self.close_blob() {
+            failures.push(e);
+        }
         if let Err(e) = self.close_cursor() {
             failures.push(e);
         }

@@ -180,3 +180,58 @@ fn native_error_retains_phase_sqlstate_and_codes() {
     c.reset().unwrap();
     c.close().unwrap();
 }
+
+#[test]
+#[ignore = "requires the isolated fixture; scripts/test_native.py runs this"]
+fn blob_segments_early_close_and_pending_cancel_cleanup() {
+    let mut c = connect();
+    let control = c.cancel_handle().unwrap();
+    c.begin_operation(301).unwrap();
+    c.begin(false, 0, None).unwrap();
+    let statement = c
+        .prepare("SELECT BINARY_VALUE FROM FBFAST_BLOBS WHERE ID=1048577")
+        .unwrap();
+    let schema = c.metadata(statement, false).unwrap();
+    c.open_cursor(statement, &[], 5000).unwrap();
+    let batch = c.fetch(1, 1024).unwrap();
+    let offset = schema.columns[0].offset as usize;
+    let id: [u8; 8] = batch.row(0).unwrap()[offset..][..8].try_into().unwrap();
+    c.open_blob(id, 0).unwrap();
+    assert!(c.open_blob(id, 0).is_err());
+    assert!(c.close_cursor().is_err());
+    assert!(c.rollback().is_err());
+    let mut small = [0u8; 7];
+    let (count, eof) = c.read_blob(&mut small).unwrap();
+    assert!(!eof && count > 0 && count <= small.len());
+    assert!(small[..count].iter().all(|b| *b == b'x'));
+    c.close_blob().unwrap(); // A partial segment is safely abandoned.
+    c.open_blob(id, 0).unwrap();
+    let mut data = [0u8; 32768];
+    let (count, eof) = c.read_blob(&mut data).unwrap();
+    assert!(!eof && count > 0);
+    assert!(data[..count].iter().all(|b| *b == b'x'));
+    assert!(control.request(301).unwrap());
+    // Firebird may serve buffered segments without consuming a cancel request.
+    // Core independently checks Cancellation between bounded read calls.
+    if let Err(error) = c.read_blob(&mut data) {
+        assert!(
+            matches!(
+                error,
+                NativeError::Database {
+                    kind: fbfast_native::DatabaseErrorKind::Cancelled,
+                    phase: "read_blob",
+                    ..
+                }
+            ),
+            "{error:?}"
+        );
+    }
+    assert!(control.finish(301).unwrap());
+    c.disable_cancel().unwrap();
+    c.close_blob().unwrap();
+    c.close_blob().unwrap();
+    c.close_cursor().unwrap();
+    c.rollback().unwrap();
+    c.reset().unwrap();
+    c.close().unwrap();
+}

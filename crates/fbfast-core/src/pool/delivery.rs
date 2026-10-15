@@ -12,6 +12,7 @@ use std::{
 /// It owns no attachment or slot; native cleanup has already completed.
 #[derive(Clone)]
 pub struct DeliveryBudget {
+    pub(super) scope: Option<Arc<super::session_scope::Permit>>,
     pub(super) inner: Weak<Inner>,
     pub(super) progress: Arc<Progress>,
     pub(super) deadline: Option<Instant>,
@@ -37,6 +38,9 @@ impl DeliveryBudget {
     pub fn check_phase(&self, phase: &'static str) -> Result<(), Error> {
         if self.pid != std::process::id() {
             return Err(fork_error());
+        }
+        if let Some(scope) = &self.scope {
+            scope.check()?;
         }
         if self.deadline.is_some_and(|end| Instant::now() >= end) {
             if self.progress.cancellation.timeout() {

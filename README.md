@@ -19,10 +19,10 @@ uv add /caminho/para/fbfast-0.1.0-cp314-cp314-macosx_11_0_arm64.whl
 `uv pip install arquivo.whl` e `pip install arquivo.whl` também funcionam.
 `uv add` registra a dependência e atualiza o lock do projeto. Instalar de um
 checkout (`uv add /caminho/para/firebird_rust`) ou do Git compila no computador
-consumidor e exige Rust 1.91.1, C++ e SDK Firebird. O endereço e a primeira tag
-do repositório público ainda não foram definidos.
+consumidor e exige Rust 1.91.1, C++ e SDK Firebird. Os fontes ficam no
+[repositório público fbfast](https://github.com/rafael-peter/fbfast).
 
-Quando o repositório estiver disponível, substitua os marcadores abaixo:
+Para instalar uma revisão publicada, substitua `COMMIT` pelo hash desejado:
 
 ```sh
 uv add "git+https://github.com/rafael-peter/fbfast.git" --rev COMMIT
@@ -86,10 +86,84 @@ personalizados; não é necessário no uso normal.
 A resolução e validação ocorrem em Rust, sem modificar o ambiente global.
 A configuração é imutável e oculta senha em `repr`.
 
+O resultado completo é limitado apenas por `max_result_rows` (padrão `None`, sem
+limite). `max_result_bytes` foi removido; remova esse argumento de chamadas antigas.
+`batch_bytes` continua sendo o orçamento de cada lote e os bytes produzidos
+continuam disponíveis nas estatísticas. A remoção da checagem não constitui uma
+medição de ganho de desempenho.
+
+`wire_crypt` aceita `"required"` (padrão, exige criptografia), `"enabled"` (negocia
+e permite conexão sem criptografia) e `"disabled"` (desativa). `True` equivale a
+`"required"`; `False`, a `"disabled"`. Se o servidor estiver com `WireCrypt=Disabled`,
+o modo `"required"` falha com `Incompatible wire encryption levels requested on
+client and server`. Nesse ambiente, `FirebirdConfig(wire_crypt="enabled")` permite
+a conexão e também permite criptografia quando ela estiver disponível no servidor.
+O modo `"required"` não faz fallback automático para uma conexão sem criptografia.
+Veja as [regras de negociação do Firebird](https://www.firebirdsql.org/docs/html/en/refdocs/fbconf/firebird-configuration-reference.html).
+
+## Pools nomeadas
+
+`init_pool_sync(config, name="default")` aquece e registra uma pool pronta;
+`await init_pool(...)` faz o equivalente assíncrono. `get_pool(name)` devolve a
+mesma instância. Os atalhos do módulo usam essa pool, seus limites e seu cache:
+
+```python
+await fbfast.init_pool(fbfast.FirebirdConfig(), name="bi")
+try:
+    rows = await fbfast.fetch_all_async(
+        "SELECT ID FROM MINHA_TABELA WHERE ID >= ?", [10], pool="bi"
+    )
+    async with fbfast.stream_async("SELECT ID FROM MINHA_TABELA", pool="bi") as batches:
+        async for batch in batches:
+            await processar_async(batch)
+finally:
+    await fbfast.close_pool("bi")
+```
+
+`fetch_all`, `fetch_one`, `fetch_val`, `explain` e suas versões async, além de
+`stream`/`stream_async`, aceitam `pool="nome"`; omitir seleciona `"default"`.
+Nenhuma consulta inicializa uma pool global automaticamente.
+`PoolNotInitializedError` indica nome ausente, em abertura ou em fechamento.
+Um nome já reservado gera `PoolAlreadyInitializedError`, inclusive em corridas.
+
+`close_pool_sync(name)` ou `await close_pool(name)` bloqueia novas buscas, drena
+e remove a instância; fechar um nome ausente é inofensivo. Em timeout/erro ou
+cancelamento durante cleanup, o nome continua reservado: repita o fechamento
+para concluir antes de inicializar outra pool com esse nome. Fechar durante a
+abertura impede a publicação posterior. Nomes pertencem ao processo; inicialize
+no lifespan após fork, ou use spawn. Pools herdadas de outro PID são rejeitadas
+antes de acessar locks/handles. O teto agregado soma todas as pools e workers.
+
+Em FastAPI, inicialize no `lifespan` e feche em `finally`:
+
+```python
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await fbfast.init_pool(fbfast.FirebirdConfig())
+    try:
+        yield
+    finally:
+        await fbfast.close_pool()
+
+app = FastAPI(lifespan=lifespan)
+```
+
+Mantenha o `async with stream_async(...)` dentro do gerador que fornece o corpo
+HTTP. Os testes usam TCP real com FastAPI 0.143.2, Starlette 1.8.0 e Uvicorn 0.54.0
+(ASGI HTTP 2.3): desconexão enquanto espera fetch ou consome um lote, erro após
+headers, término normal e shutdown. Comprovam saída do contexto e liberação da
+conexão, mantendo referências ao gerador/stream para não depender de GC. Outras
+versões/servidores precisam repetir essa verificação. Os testes também transportam
+JSON nativo em NDJSON e array. Depois de enviar headers,
+um erro interrompe o corpo e não transforma a resposta parcial em sucesso.
+
 ## Consultas
 
 Já estão implementados
-`Pool`, `fetch_all`, `fetch_one`, `fetch_val`, `explain` (com params), `stats`,
+`Pool`, `fetch_all`, `fetch_one`, `fetch_val`, `fetch_json`, `explain` (com params), `stats`,
 `warmup_sync`, `close_sync` e `with Pool(config)`. Consultas usam binding `?`, TPB READ ONLY e
 rollback/reset antes da reutilização. `fetch_all`/`fetch_one` aceitam `as_dict`.
 DECIMAL/INT128 e datas/horas sem timezone preservam a precisão suportada.
@@ -131,6 +205,31 @@ com espera crescente após falha de conexão. O handshake verifica role, charset
 timezone e isolamento efetivos antes de disponibilizar o attachment. Compressão
 é negociada com o servidor; pedir compressão não comprova que ela esteja ativa.
 
+`snapshot()` e `snapshot_async()` reservam uma conexão para uma transação
+READ ONLY SNAPSHOT. A sessão oferece as mesmas consultas e streams já disponíveis:
+
+```python
+with pool.snapshot(timeout=120.0) as session:
+    total = session.fetch_val("SELECT COUNT(*) FROM MINHA_TABELA")
+    with session.stream("SELECT ID FROM MINHA_TABELA") as batches:
+        for batch in batches:
+            processar(batch)
+
+async with pool.snapshot_async(timeout=120.0) as session:
+    rows = await session.fetch_all_async("SELECT ID FROM MINHA_TABELA")
+```
+
+O prazo da sessão inclui intervalos entre consultas e conversão Python; omitido,
+usa `query_timeout`, e `None` remove o prazo da sessão. Cada consulta também tem
+seu próprio prazo: `timeout=None` nela não remove o prazo da sessão. Uma sessão
+aceita apenas uma operação por vez, incluindo conversão e um stream aberto.
+Chamadas diretamente na pool usam outras transações. No snapshot, as tabelas
+`MON$` também representam a fotografia de monitoramento dessa transação.
+
+Use o context manager ou `Snapshot.close_sync()`/`await Snapshot.close()` para
+encerrar. Erro de execução ou cancelamento encerra a sessão; uma consulta posterior
+não abre outra transação implicitamente. O slot só volta à pool após cleanup.
+
 `pool.clear_statement_cache_sync()` e `await pool.clear_statement_cache()`
 invalidam os statements de todos os attachments sem interromper cursores em uso.
 O prazo padrão é `query_timeout`; `timeout=None` remove esse prazo. Cancelar ou
@@ -144,8 +243,8 @@ por operação. Ctrl+C e timeout cancelam a consulta sem encerrar o cliente inte
 o attachment cancelado é descartado após cleanup. O prazo inclui a conversão
 para Python. Sinais e recuperação após cancel foram testados no alvo local.
 
-Ainda faltam a API pública de snapshot, pools nomeadas, Arrow/Polars, JSON,
-DECFLOAT/timezone/BLOB e exportação paralela. Em attach sem resposta ou partição
+Ainda faltam Arrow/Polars, DECFLOAT/timezone e exportação paralela.
+Em attach sem resposta ou partição
 de rede, o chamador pode retornar antes da chamada nativa; o slot permanece
 contado até o cleanup terminar. Fechar a pool também respeita um prazo para o
 chamador, sem prometer encerrar threads nativas presas.
@@ -159,6 +258,51 @@ No modo copiável, substitua a pasta inteira. Não misture arquivos de builds
 diferentes nem substitua uma dylib carregada.
 Nenhum script publica ou faz upload de pacotes.
 
+## JSON nativo
+
+`fetch_json`/`fetch_json_async` devolvem `bytes` contendo um array JSON UTF-8
+compacto; resultado vazio é `b"[]"`. O Rust serializa diretamente do decoder,
+sem criar uma tabela de objetos Python nem uma árvore JSON intermediária.
+Pool, snapshot e atalhos do módulo oferecem a mesma API e os mesmos limites.
+
+```python
+data = await pool.fetch_json_async("SELECT ID, VALOR FROM MINHA_TABELA")
+
+async with pool.stream_json_async(
+    "SELECT ID, VALOR FROM MINHA_TABELA", format="ndjson", timeout=None
+) as chunks:
+    async for chunk in chunks:
+        await enviar(chunk)
+```
+
+| Opção | Padrão | Alternativa |
+|---|---|---|
+| `orient` | `"records"`: objetos com aliases únicos | `"values"`: arrays, permite nomes repetidos |
+| `json_integers` | `"safe"`: BIGINT/INT128 como strings por tipo da coluna | `"number"`: número JSON exato, sujeito à precisão do consumidor |
+| `json_decimals` | `"string"`: decimal exato | `"number"`: texto numérico exato, sem float intermediário |
+| `json_binary` | `"error"`: rejeita valores binários | `"base64"`: string base64 explícita |
+| `json_non_finite` | `"error"`: rejeita NaN e infinitos | `"null"`: converte esses valores em null |
+
+SMALLINT/INTEGER são números; NULL/bool têm seus equivalentes JSON. Texto mantém
+Unicode e escaping JSON. Datas e horários usam ISO 8601, sem offset inventado.
+BLOBs textuais seguem a política de charset; binários exigem `json_binary="base64"`.
+DECFLOAT e tipos SQL com timezone ainda geram erro de tipo não suportado.
+
+`stream_json`/`stream_json_async` entregam chunks próprios, válidos após fechar o
+contexto. `format="ndjson"` preserva registros completos com newline; um registro
+maior que `batch_bytes` ocupa sozinho um chunk. `format="array"` limita cada
+chunk a `batch_bytes` e pode dividir o documento inclusive no meio de um caractere
+UTF-8: concatene bytes ou use decoder incremental, sem decodificar cada chunk
+isoladamente. A concatenação final é um array JSON completo. `batch_rows` controla
+o fetch nativo, não promete um número exato de registros por chunk codificado.
+
+O fechamento `]` só é enviado após cleanup bem-sucedido; erro/cancelamento não
+fecha artificialmente um array parcial. O mesmo controle de demanda/prefetch
+limita a produção. A memória temporária inclui o lote nativo e um registro
+codificado, além dos chunks entregues/prefetch. Materialização completa também
+faz uma cópia final para `bytes` Python; essa cópia verifica prazo/cancelamento e
+libera o GIL em blocos. `max_result_rows` aplica-se a fetch_json, não aos streams.
+
 ## Ambiente de validação
 
 ```sh
@@ -166,6 +310,7 @@ Nenhum script publica ou faz upload de pacotes.
 .venv/bin/python scripts/test_native.py
 .venv/bin/python scripts/test_python.py
 .venv/bin/python scripts/verify_install.py
+.venv/bin/python scripts/benchmark_json.py --samples 3
 .venv/bin/python benchmarks/run_native_probe.py
 .venv/bin/python benchmarks/run_cancel_probe.py
 .venv/bin/python scripts/firebird_fixture.py stop
@@ -180,3 +325,21 @@ seus números não representam o desempenho da API Python.
 `verify_install.py` cria dois consumidores uv e um Git temporário local, sem
 remoto, para provar instalação por wheel e por commit dos fontes. Nenhum script
 publica pacotes ou cria releases remotas.
+
+
+## BLOBs
+
+Linhas, streams, snapshots e JSON leem BLOBs inteiros dentro da transação.
+BLOB binário vira `bytes`; BLOB TEXT com charset conhecido é transliterado para
+UTF8 pelo cliente oficial e vira `str`. `NONE` permanece `bytes`, salvo
+`fallback_charset="UTF8"` explícito; `OCTETS` permanece `bytes`. Conteúdo inválido
+não recebe replacement, e `trim_char` não altera BLOBs. Subtipos diferentes de
+BINARY (0) e TEXT (1) geram `UnsupportedTypeError`, inclusive em resultados vazios.
+
+`max_blob_bytes` limita cada BLOB (padrão 64 MiB), contando bytes efetivamente
+lidos, após eventual transliteração. Exceder o limite gera `ResultLimitError`,
+sem conteúdo truncado. Esse limite é independente do limite total de linhas.
+Streams com BLOBs entregam uma linha por lote nesta implementação; uma linha
+pode exceder `batch_bytes`, mas cada BLOB obedece ao seu limite. Os resultados
+retidos continuam válidos após fechar a pool. Nenhum handle preguiçoso é exposto.
+Parâmetros BLOB não são criados implicitamente para fazer bind.

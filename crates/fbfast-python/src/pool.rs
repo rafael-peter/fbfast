@@ -1,20 +1,74 @@
+use crate::executor::Executor;
+use crate::pool_wait::{close, internal, wait};
 use crate::{config::PyConfig, errors::from_core, values::Converter};
-use fbfast_core::{
-    error::{Error, ErrorKind},
-    pool::{Output, Pending, Pool},
-};
+use fbfast_core::pool::{Output, Pool};
 use pyo3::{prelude::*, types::PyDict};
-use std::{path::PathBuf, time::Duration};
+use std::path::PathBuf;
 
 #[pyclass(name = "_Pool", module = "fbfast._native", frozen)]
 pub struct PyPool {
-    inner: Pool,
-    close_timeout: f64,
-    delivery: std::sync::Arc<tokio::sync::Semaphore>,
+    pub(crate) inner: Executor,
+    pub(crate) close_timeout: f64,
+    pub(crate) delivery: std::sync::Arc<tokio::sync::Semaphore>,
 }
 
 #[pymethods]
 impl PyPool {
+    #[pyo3(signature = (sql, params=None, *, options, timeout=None, asynchronous=false))]
+    fn json<'py>(
+        &self,
+        py: Python<'py>,
+        sql: String,
+        params: Option<&Bound<'py, PyAny>>,
+        options: Vec<String>,
+        timeout: Option<f64>,
+        asynchronous: bool,
+    ) -> PyResult<Py<PyAny>> {
+        self.inner.stats().map_err(from_core)?;
+        crate::json::query(
+            py,
+            self,
+            sql,
+            params,
+            crate::json::options(&options)?,
+            timeout,
+            asynchronous,
+        )
+    }
+    #[pyo3(signature = (sql, params=None, *, options, batch_rows=None, timeout=None))]
+    fn stream_json(
+        &self,
+        py: Python<'_>,
+        sql: String,
+        params: Option<&Bound<'_, PyAny>>,
+        options: (Vec<String>, String),
+        batch_rows: Option<u32>,
+        timeout: Option<f64>,
+    ) -> PyResult<crate::stream::PyStream> {
+        self.inner.stats().map_err(from_core)?;
+        let json = (
+            crate::json::options(&options.0)?,
+            crate::json::format(&options.1)?,
+        );
+        let params = Converter::new(py)?.params(params)?;
+        Ok(crate::stream::PyStream {
+            core: self
+                .inner
+                .stream_json(sql, params, batch_rows, json, timeout)
+                .map_err(from_core)?,
+            as_dict: false,
+            close_timeout: self.close_timeout,
+            delivery: self.delivery.clone(),
+        })
+    }
+    #[pyo3(signature = (*, timeout=None))]
+    fn snapshot(&self, timeout: Option<f64>) -> PyResult<Self> {
+        Ok(Self {
+            inner: self.inner.snapshot(timeout).map_err(from_core)?,
+            close_timeout: self.close_timeout,
+            delivery: self.delivery.clone(),
+        })
+    }
     #[pyo3(signature = (sql, params=None, *, batch_rows=None, as_dict=false, timeout=None))]
     fn stream(
         &self,
@@ -40,7 +94,7 @@ impl PyPool {
     #[new]
     fn new(config: &PyConfig, client_path: PathBuf) -> Self {
         Self {
-            inner: Pool::new(config.inner.clone(), client_path),
+            inner: Executor::Pool(Pool::new(config.inner.clone(), client_path)),
             close_timeout: config.inner.close_timeout,
             delivery: std::sync::Arc::new(tokio::sync::Semaphore::new(
                 config.inner.pool_size as usize + config.inner.max_waiters as usize,
@@ -145,6 +199,7 @@ impl PyPool {
             _ => Err(internal()),
         }?;
         converter.checkpoint()?;
+        pending.delivery_complete();
         Ok(result)
     }
 
@@ -173,6 +228,7 @@ impl PyPool {
             _ => Err(internal()),
         }?;
         converter.checkpoint()?;
+        pending.delivery_complete();
         Ok(result)
     }
 
@@ -194,7 +250,10 @@ impl PyPool {
         converter.set_budget(pending.delivery_budget().map_err(from_core)?);
         converter.checkpoint()?;
         match output {
-            Output::Plan(plan) => Ok(plan),
+            Output::Plan(plan) => {
+                pending.delivery_complete();
+                Ok(plan)
+            }
             _ => Err(internal()),
         }
     }
@@ -215,6 +274,10 @@ impl PyPool {
 
     fn close_sync(&self, py: Python<'_>) -> PyResult<()> {
         close(py, &self.inner, self.close_timeout)
+    }
+
+    fn request_close(&self) -> PyResult<()> {
+        self.inner.begin_close().map_err(from_core)
     }
 
     #[pyo3(signature = (*, timeout=None))]
@@ -254,43 +317,6 @@ impl PyPool {
         }
         Ok(result)
     }
-}
-
-fn wait(py: Python<'_>, pending: &mut Pending) -> PyResult<Output> {
-    loop {
-        if let Some(output) = py
-            .detach(|| pending.wait_slice(Duration::from_millis(25)))
-            .map_err(from_core)?
-        {
-            return Ok(output);
-        }
-        // KeyboardInterrupt drops the request, marks cancellation and leaves the worker counted.
-        py.check_signals()?;
-    }
-}
-fn close(py: Python<'_>, pool: &Pool, seconds: f64) -> PyResult<()> {
-    let end = std::time::Instant::now()
-        .checked_add(Duration::from_secs_f64(seconds))
-        .ok_or_else(|| from_core(Error::config("close_timeout", "duration overflow")))?;
-    loop {
-        let remaining = end.saturating_duration_since(std::time::Instant::now());
-        let result = py.detach(|| pool.close(remaining.min(Duration::from_millis(25))));
-        match result {
-            Err(error)
-                if error.kind == ErrorKind::PoolTimeout && std::time::Instant::now() < end =>
-            {
-                py.check_signals()?;
-            }
-            result => return result.map_err(from_core),
-        }
-    }
-}
-fn internal() -> PyErr {
-    from_core(Error::new(
-        ErrorKind::Query,
-        "delivery",
-        "Unexpected native result type",
-    ))
 }
 
 pub fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {

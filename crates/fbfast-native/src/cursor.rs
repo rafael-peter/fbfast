@@ -1,6 +1,7 @@
 use crate::{ffi, Connection, NativeError, StatementId};
 
-/// Aligned owned messages. Each row remains valid after cursor/attachment close.
+/// Aligned owned wire messages. BLOB IDs must be consumed in their transaction;
+/// this storage only owns the ID bytes, not the referenced BLOB contents.
 pub struct RawBatch {
     data: Vec<u64>,
     stride: usize,

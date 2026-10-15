@@ -2,6 +2,7 @@ use super::state::Inner;
 use crate::{
     error::{Error, ErrorKind},
     execution::{control::Cancellation, BatchConsumer},
+    sinks::json::JsonOutput,
     sinks::rows::Rows,
 };
 use std::{
@@ -12,6 +13,7 @@ use std::{
 pub(super) enum Event {
     Opened,
     Batch(Rows),
+    Json(JsonOutput),
 }
 pub(super) struct DemandState {
     pub requested: u64,
@@ -44,9 +46,10 @@ pub(super) struct Consumer<'a> {
     pub idle_timeout: Option<f64>,
     pub produced: u64,
     pub opened: bool,
+    pub deadline: Option<Instant>,
 }
 
-impl BatchConsumer for Consumer<'_> {
+impl Consumer<'_> {
     fn before_fetch(&mut self) -> Result<bool, Error> {
         if !self.opened {
             self.producer
@@ -58,6 +61,13 @@ impl BatchConsumer for Consumer<'_> {
         let idle_since = Instant::now();
         loop {
             self.cancellation.check()?;
+            if self.deadline.is_some_and(|end| Instant::now() >= end) {
+                return Err(Error::new(
+                    ErrorKind::QueryTimeout,
+                    "query",
+                    "Query deadline expired",
+                ));
+            }
             if self.inner.upgrade().is_none_or(|inner| {
                 inner
                     .state
@@ -107,11 +117,10 @@ impl BatchConsumer for Consumer<'_> {
             );
         }
     }
-    fn batch(&mut self, rows: Rows) -> Result<bool, Error> {
-        let (count, bytes) = (rows.count, rows.bytes);
+    fn send(&mut self, event: Event, count: usize, bytes: usize) -> Result<bool, Error> {
         self.producer
             .sender
-            .try_send(Event::Batch(rows))
+            .try_send(event)
             .map_err(|_| consumer_gone())?;
         self.produced += 1;
         if let Some(inner) = self.inner.upgrade() {
@@ -120,6 +129,24 @@ impl BatchConsumer for Consumer<'_> {
             state.stats.result_bytes += bytes as u64;
         }
         Ok(true)
+    }
+}
+impl BatchConsumer for Consumer<'_> {
+    fn before_fetch(&mut self) -> Result<bool, Error> {
+        self.before_fetch()
+    }
+    fn batch(&mut self, rows: Rows) -> Result<bool, Error> {
+        let (count, bytes) = (rows.count, rows.bytes);
+        self.send(Event::Batch(rows), count, bytes)
+    }
+}
+impl BatchConsumer<JsonOutput> for Consumer<'_> {
+    fn before_fetch(&mut self) -> Result<bool, Error> {
+        self.before_fetch()
+    }
+    fn batch(&mut self, json: JsonOutput) -> Result<bool, Error> {
+        let (count, bytes) = (json.rows, json.data.len());
+        self.send(Event::Json(json), count, bytes)
     }
 }
 fn consumer_gone() -> Error {

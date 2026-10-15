@@ -51,4 +51,9 @@ void fbfast_plan(void*, uint64_t, char*, uint32_t capacity, uint32_t* required, 
 void fbfast_open_cursor(void*, uint64_t, const void*, uint32_t length, uint32_t timeout_ms, FbError*) noexcept;
 uint32_t fbfast_fetch(void*, void*, uint32_t stride, uint32_t capacity, uint32_t* eof, FbError*) noexcept;
 void fbfast_close_cursor(void*, FbError*) noexcept;
+void fbfast_open_blob(void*, const uint8_t* id, uint32_t charset, FbError*) noexcept;
+uint32_t fbfast_read_blob(void*, void*, uint32_t capacity, uint32_t* eof, FbError*) noexcept;
+void fbfast_close_blob(void*, FbError*) noexcept;
+void fbfast_decimal_text(void*, uint32_t type, const uint8_t*, char*, uint32_t capacity, FbError*) noexcept;
+void fbfast_decimal_bytes(void*, uint32_t type, const char*, uint8_t*, FbError*) noexcept;
 }

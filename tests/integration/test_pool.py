@@ -45,7 +45,9 @@ def test_lazy_pool_exact_scalars_and_binding(fb, config):
 
 
 def test_errors_cleanup_limits_and_names(fb, config):
-    with fb.Pool(config(max_result_rows=1)) as pool:
+    # Keep the cleanup assertion exact: a larger pool may replenish min_idle
+    # while this connection is leased and legitimately finish with two idle slots.
+    with fb.Pool(config(pool_size=1, max_result_rows=1)) as pool:
         with pytest.raises(fb.ResultLimitError):
             pool.fetch_all("SELECT ID FROM FBFAST_TYPES")
         with pytest.raises(fb.DataConversionError) as duplicate:

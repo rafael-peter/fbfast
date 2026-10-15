@@ -11,6 +11,7 @@ use std::{
 };
 
 pub struct Pending {
+    pub(super) scope: Option<Arc<super::session_scope::Permit>>,
     inner: Option<Weak<Inner>>,
     progress: Option<Arc<Progress>>,
     receiver: Option<Receiver<Result<Output, Error>>>,
@@ -22,6 +23,27 @@ pub struct Pending {
 }
 
 impl Pending {
+    /// Language bindings acknowledge successful conversion before releasing a session lease.
+    pub fn delivery_complete(&self) {
+        if self.pid == std::process::id() {
+            if let Some(scope) = &self.scope {
+                scope.complete();
+            }
+        }
+    }
+    pub(super) fn opening_receiver(&self, receiver: Receiver<Result<Output, Error>>) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            progress: self.progress.clone(),
+            receiver: Some(receiver),
+            id: self.id,
+            pid: self.pid,
+            finished: false,
+            acquire_deadline: self.acquire_deadline,
+            timeout: self.timeout,
+            scope: None,
+        }
+    }
     pub(super) fn try_result(&mut self) -> Result<Option<Output>, Error> {
         if self.pid != std::process::id() {
             return Err(fork_error());
@@ -118,11 +140,15 @@ impl Pending {
         }
         let progress = self.progress.as_ref().expect("live progress").clone();
         let started = *progress.started.lock().unwrap_or_else(|e| e.into_inner());
-        let deadline = match started {
+        let mut deadline = match started {
             Some(start) => crate::execution::control::deadline_from(start, self.timeout)?,
             None => None,
         };
+        if let Some(end) = self.scope.as_ref().and_then(|scope| scope.deadline()) {
+            deadline = Some(deadline.map_or(end, |current| current.min(end)));
+        }
         Ok(super::DeliveryBudget {
+            scope: self.scope.clone(),
             inner: self.inner.as_ref().expect("live pool reference").clone(),
             progress,
             deadline,
@@ -138,6 +164,7 @@ impl Pending {
         timeout: Option<f64>,
     ) -> Self {
         Self {
+            scope: None,
             inner: Some(Arc::downgrade(inner)),
             progress: Some(progress),
             receiver: Some(receiver),
@@ -249,6 +276,9 @@ impl Pending {
 impl Drop for Pending {
     fn drop(&mut self) {
         if self.pid != std::process::id() {
+            if let Some(value) = self.scope.take() {
+                std::mem::forget(value);
+            }
             if let Some(value) = self.inner.take() {
                 std::mem::forget(value);
             }

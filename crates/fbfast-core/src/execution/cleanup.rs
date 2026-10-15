@@ -22,6 +22,9 @@ impl ExecutionConnection {
             Err(error) => cleanup.push(error),
             Ok(false) => (),
         }
+        if let Err(error) = self.native.close_blob() {
+            cleanup.push(error.into());
+        }
         if let Err(error) = self.native.close_cursor() {
             cleanup.push(error.into());
         }

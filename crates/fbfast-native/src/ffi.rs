@@ -141,4 +141,22 @@ unsafe extern "C" {
         error: *mut RawStatus,
     ) -> u32;
     pub fn fbfast_close_cursor(handle: *mut c_void, error: *mut RawStatus);
+    pub fn fbfast_open_blob(
+        handle: *mut c_void,
+        id: *const u8,
+        charset: u32,
+        error: *mut RawStatus,
+    );
+    pub fn fbfast_read_blob(
+        handle: *mut c_void,
+        out: *mut c_void,
+        capacity: u32,
+        eof: *mut u32,
+        error: *mut RawStatus,
+    ) -> u32;
+    pub fn fbfast_close_blob(handle: *mut c_void, error: *mut RawStatus);
+    pub fn fbfast_decimal_text(handle: *mut c_void, kind: u32, data: *const u8,
+        text: *mut c_char, capacity: u32, error: *mut RawStatus);
+    pub fn fbfast_decimal_bytes(handle: *mut c_void, kind: u32, text: *const c_char,
+        data: *mut u8, error: *mut RawStatus);
 }

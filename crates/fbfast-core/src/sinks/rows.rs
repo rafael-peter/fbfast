@@ -1,6 +1,6 @@
 use crate::{
     config::Config,
-    decode::{DecodePlan, Value},
+    decode::{BlobReader, DecodePlan, Value},
     error::{Error, ErrorKind},
 };
 
@@ -36,6 +36,7 @@ impl Rows {
         plan: &DecodePlan,
         message: &[u8],
         config: &Config,
+        blobs: &mut impl BlobReader,
     ) -> Result<(), Error> {
         if config
             .max_result_rows
@@ -44,17 +45,17 @@ impl Rows {
             return Err(limit());
         }
         for index in 0..self.names.len() {
-            let value = plan.value(index, message)?;
+            let value = plan.value_with_blobs(index, message, blobs)?;
             self.bytes = self
                 .bytes
                 .checked_add(value.payload_bytes())
-                .ok_or_else(limit)?;
-            if config
-                .max_result_bytes
-                .is_some_and(|limit| self.bytes as u64 > limit)
-            {
-                return Err(limit());
-            }
+                .ok_or_else(|| {
+                    Error::new(
+                        ErrorKind::ResultLimit,
+                        "materialize",
+                        "Result byte counter overflow",
+                    )
+                })?;
             self.cells.push(value);
         }
         self.count += 1;
@@ -78,6 +79,6 @@ fn limit() -> Error {
     Error::new(
         ErrorKind::ResultLimit,
         "materialize",
-        "Materialized result exceeds configured rows/bytes",
+        "Materialized result exceeds max_result_rows",
     )
 }

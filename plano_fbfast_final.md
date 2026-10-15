@@ -6,6 +6,8 @@ Este é o documento único de trabalho dos agentes que implementarão a bibliote
 
 **Atualização de distribuição em 15/10/2026:** por orientação do autor, repositório público e instalação por `uv`/`pip` passam a ser o caminho principal. Preferir wheels prontos para consumidores; instalação direta do Git compila os fontes e requer toolchain/SDK. A pasta `dist/vendor/fbfast/` permanece como extração do mesmo wheel para uso alternativo e teste de relocação. Esta atualização prevalece sobre trechos abaixo que descrevem uv/pip como secundários; os requisitos funcionais P0–P6 permanecem integrais. Detalhes e evidências em `docs/decisions/0004-distribution-uv.md`. Nenhuma publicação remota automática está autorizada por este plano.
 
+**Atualização de limites em 15/10/2026:** por orientação do autor, `max_result_bytes` foi removido. O resultado completo tem apenas limite opcional de linhas; limites por lote, BLOB e cache permanecem. A seção 6.3 incorpora essa alteração; detalhes em `docs/decisions/0009-config-ergonomics.md`.
+
 ## 1. Goal e resultado esperado
 
 Construir `fbfast`, uma biblioteca Python de leitura para Firebird 5, com núcleo Rust, pool nativa, APIs síncrona/assíncrona e saídas eficientes em tuplas, Arrow/Polars e JSON.
@@ -368,7 +370,6 @@ O carregador do cliente é sincronizado e único por processo. Solicitar uma bib
 | `fetch_size` | `5000` | Teto de linhas por lote; inteiro positivo |
 | `batch_bytes` | `4 MiB` | Alvo de bytes por lote; configurado em bytes inteiros |
 | `prefetch_batches` | `1` | Lotes antecipados além do corrente; `0` desativa |
-| `max_result_bytes` | `256 MiB` | Orçamento cumulativo de dados materializados no formato nativo escolhido; `None` desativa explicitamente |
 | `max_result_rows` | `None` | Limite opcional de linhas materializadas |
 | `max_blob_bytes` | `64 MiB` | Limite de um BLOB materializado |
 | `query_timeout` | `30.0` | Execute/prepare/consumo; `None` permite operação longa explícita |
@@ -381,9 +382,9 @@ O carregador do cliente é sincronizado e único por processo. Solicitar uma bib
 
 Defaults são pontos de partida, não tuning universal. Revisá-los com benchmark e registrar a alteração antes de congelar a API. Validar finitude, intervalos e `0 <= min_idle <= pool_size`.
 
-O limite de resultado não representa RSS total: objetos Python, fbclient, allocator, consumidor e cópias finais também consomem memória. Não esconder essas parcelas no benchmark. Uma célula maior que `batch_bytes` pode formar um lote de uma linha, respeitando os demais limites. Ultrapassar limite gera `ResultLimitError`; nunca truncar silenciosamente.
+O limite de linhas não representa RSS total: objetos Python, fbclient, allocator, consumidor e cópias finais também consomem memória. Não esconder essas parcelas no benchmark. Uma célula maior que `batch_bytes` pode formar um lote de uma linha, respeitando `max_blob_bytes` quando aplicável. Ultrapassar limite gera `ResultLimitError`; nunca truncar silenciosamente.
 
-A contagem de materialização é cumulativa: converter um lote para objetos Python e liberar o buffer Rust não zera o orçamento. Para linhas, contar payload/estrutura nativa produzida; para Arrow, buffers/validade/offsets; para JSON, bytes codificados. Limites de prefetch e memória temporária são controlados separadamente. Testar também consultas sem BLOB com milhões de células pequenas.
+A contagem de linhas materializadas é cumulativa: converter um lote para objetos Python e liberar o buffer Rust não zera o limite de linhas. Estatísticas podem contabilizar bytes nativos produzidos, sem impor um teto total de bytes ao resultado. Limites de prefetch, lote e memória temporária são controlados separadamente. Testar também consultas sem BLOB com milhões de células pequenas.
 
 Streaming aplica limites de lote/célula e prazos, sem impor por padrão o limite total de uma materialização. O consumidor é responsável pela memória dos lotes que decidir guardar.
 

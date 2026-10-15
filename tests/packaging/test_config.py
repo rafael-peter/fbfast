@@ -50,6 +50,28 @@ for missing in base:
     assert result.returncode == 0, result.stderr
 
 
+def test_only_row_limit_remains_in_config(consumer: Path) -> None:
+    result = execute(
+        consumer,
+        """
+import fbfast, os
+os.environ.update(FB_DATABASE='fixture', FB_USER='reader', FB_PASSWORD='secret',
+                  FB_MAX_RESULT_BYTES='1', FB_MAX_RESULT_ROWS='17')
+config = fbfast.FirebirdConfig()
+assert config.max_result_rows == 17
+assert not hasattr(config, 'max_result_bytes')
+assert fbfast.FirebirdConfig(max_result_rows=None).max_result_rows is None
+try:
+    fbfast.FirebirdConfig(max_result_bytes=1)
+except fbfast.ConfigurationError as exc:
+    assert 'max_result_bytes' in str(exc) and 'unknown option' in str(exc)
+else:
+    raise AssertionError('removed option still accepted')
+""",
+    )
+    assert result.returncode == 0, result.stderr
+
+
 def test_invalid_environment_is_not_absent_and_explicit_values_win(consumer: Path) -> None:
     (consumer / ".env").write_text("FB_HOST=from-file\nFB_PORT=3051\n")
     result = execute(

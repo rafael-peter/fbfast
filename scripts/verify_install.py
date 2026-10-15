@@ -30,10 +30,23 @@ assert pathlib.Path(info['path']).is_relative_to(root)
 assert pathlib.Path(info['root']).is_relative_to(root)
 report = {'package': str(root), 'build_id': fbfast.build_info()['build_id'], 'client_version': info['version']}
 if 'FBFAST_ACCEPTANCE_CONFIG' in os.environ:
-    with fbfast.Pool(fbfast.FirebirdConfig(**json.loads(os.environ['FBFAST_ACCEPTANCE_CONFIG']))) as pool:
-        assert pool.fetch_all('SELECT ID, LABEL FROM FBFAST_TYPES ORDER BY ID') == [(1, 'Olá 日本語'), (2, None)]
-        assert pool.fetch_one('SELECT MON$READ_ONLY, MON$ISOLATION_MODE FROM MON$TRANSACTIONS WHERE MON$TRANSACTION_ID = CURRENT_TRANSACTION') == (1, 4)
+    pool = fbfast.init_pool_sync(fbfast.FirebirdConfig(**json.loads(os.environ['FBFAST_ACCEPTANCE_CONFIG'])))
+    try:
+        assert fbfast.get_pool() is pool
+        assert fbfast.fetch_all('SELECT ID, LABEL FROM FBFAST_TYPES ORDER BY ID') == [(1, 'Olá 日本語'), (2, None)]
+        assert fbfast.fetch_one('SELECT MON$READ_ONLY, MON$ISOLATION_MODE FROM MON$TRANSACTIONS WHERE MON$TRANSACTION_ID = CURRENT_TRANSACTION') == (1, 4)
         report['real_query_and_readonly_tpb'] = True
+        report['named_pool_delegates'] = True
+        assert json.loads(fbfast.fetch_json('SELECT ID, LABEL FROM FBFAST_TYPES ORDER BY ID')) == [{'ID': 1, 'LABEL': 'Olá 日本語'}, {'ID': 2, 'LABEL': None}]
+        with fbfast.stream_json('SELECT ID FROM FBFAST_TYPES ORDER BY ID', format='array') as chunks:
+            assert json.loads(b''.join(chunks)) == [{'ID': 1}, {'ID': 2}]
+        report['native_json'] = True
+        assert fbfast.fetch_one('SELECT TEXT_BLOB, BINARY_BLOB FROM FBFAST_TYPES WHERE ID=1') == ('texto em BLOB', bytes.fromhex('00ff80'))
+        assert json.loads(fbfast.fetch_json('SELECT TEXT_BLOB FROM FBFAST_TYPES WHERE ID=1')) == [{'TEXT_BLOB': 'texto em BLOB'}]
+        report['native_blobs'] = True
+    finally:
+        fbfast.close_pool_sync()
+    assert pool.stats()['closed'] == 1
 print(json.dumps(report))
 """
     return json.loads(run([str(consumer / ".venv/bin/python"), "-E", "-s", "-c", code], consumer, clean))

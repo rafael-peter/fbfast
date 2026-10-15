@@ -26,7 +26,17 @@ from ._native import (
     UnsupportedTypeError,
 )
 from .pool import Pool
-from .stream import AsyncStream, Stream
+from .snapshot import Snapshot
+from .stream import AsyncStream, Stream, JsonStream, AsyncJsonStream
+from .registry import (
+    PoolAlreadyInitializedError, PoolNotInitializedError,
+    close_pool, close_pool_sync, get_pool, init_pool, init_pool_sync,
+)
+from .api import (
+    fetch_json, fetch_json_async, stream_json, stream_json_async,
+    explain, explain_async, fetch_all, fetch_all_async, fetch_one, fetch_one_async,
+    fetch_val, fetch_val_async, stream, stream_async,
+)
 
 __version__ = "0.1.0"
 __all__ = [
@@ -41,10 +51,34 @@ __all__ = [
     "ReadOnlyViolationError",
     "ClientLibraryError",
     "PoolError",
+    "PoolAlreadyInitializedError",
+    "PoolNotInitializedError",
+    "init_pool",
+    "init_pool_sync",
+    "get_pool",
+    "close_pool",
+    "close_pool_sync",
+    "fetch_all",
+    "fetch_all_async",
+    "fetch_one",
+    "fetch_one_async",
+    "fetch_val",
+    "fetch_val_async",
+    "explain",
+    "explain_async",
+    "stream",
+    "stream_async",
     "ForkSafetyError",
     "Pool",
+    "Snapshot",
     "Stream",
     "AsyncStream",
+    "JsonStream",
+    "AsyncJsonStream",
+    "fetch_json",
+    "fetch_json_async",
+    "stream_json",
+    "stream_json_async",
     "PoolBusyError",
     "PoolClosedError",
     "PoolTimeoutError",

@@ -77,6 +77,35 @@ def sql(source: str, password: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+def configure_wire_crypt(password: str) -> None:
+    """Install only fixed aliases on this checkout's disposable server."""
+    if inspect() is None:
+        raise RuntimeError("Disposable fixture is not running")
+    path = "/opt/firebird/databases.conf"
+    marker = "# fbfast wire encryption acceptance aliases"
+    original = docker("exec", NAME, "cat", path)
+    if original.returncode:
+        raise RuntimeError("Cannot read disposable fixture configuration")
+    aliases = marker + "\n" + "\n".join(
+        f"fbfast_crypt_{policy.lower()} = /var/lib/firebird/data/crypt_{policy.lower()}.fdb\n"
+        f"{{\n    WireCrypt = {policy}\n}}"
+        for policy in ("Disabled", "Enabled", "Required")
+    )
+    contents = original.stdout.split(marker)[0] + aliases + "\n"
+    result = docker("exec", "-i", NAME, "sh", "-c", f"cat > {path}", input=contents)
+    if result.returncode:
+        raise RuntimeError("Cannot configure disposable fixture encryption aliases")
+    for policy in ("disabled", "enabled", "required"):
+        database = f"/var/lib/firebird/data/crypt_{policy}.fdb"
+        if docker("exec", NAME, "test", "-f", database).returncode == 0:
+            continue
+        created = sql(
+            f"CREATE DATABASE 'localhost:{database}' DEFAULT CHARACTER SET UTF8;\n", password
+        )
+        if created.returncode:
+            raise RuntimeError(f"Cannot initialize encryption fixture: {created.stderr.strip()}")
+
+
 def start() -> dict[str, Any]:
     existing = inspect()
     if existing is not None:
@@ -84,6 +113,7 @@ def start() -> dict[str, Any]:
             raise RuntimeError(
                 "Existing fixture is stopped or lacks local credentials; use stop then start"
             )
+        configure_wire_crypt(state()["admin_password"])
         return status()
     admin_password = secrets.token_hex(24)
     reader_password = secrets.token_hex(24)
@@ -131,6 +161,7 @@ def start() -> dict[str, Any]:
         initialized = sql((ROOT / "tests/integration/fixture.sql").read_text(), admin_password)
         if initialized.returncode:
             raise RuntimeError(f"Fixture SQL failed: {initialized.stderr.strip()}")
+        configure_wire_crypt(admin_password)
         public = status()
         with open(STATE, "w", opener=lambda path, flags: os.open(path, flags, 0o600)) as file:
             os.fchmod(file.fileno(), 0o600)

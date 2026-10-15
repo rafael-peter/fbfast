@@ -1,7 +1,10 @@
+mod blob;
 mod cleanup;
 mod connection;
 mod cursor;
 mod handshake;
+mod json;
+mod json_stream;
 mod query;
 mod snapshot;
 mod streaming;

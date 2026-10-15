@@ -1,0 +1,39 @@
+{
+  "environment": {
+    "system": "Darwin",
+    "machine": "arm64",
+    "python": "3.14.5",
+    "server_image": "sha256:d1e15bdcc0da40bf5e8af24ba6ba1d14b23d0a43fd21faa4ec8b2089feefb3b8"
+  },
+  "scope": "Same fbfast pool/client/SQL; native writer versus dict rows plus stdlib JSON. Warm attach/cache; one unmeasured warmup each; separate processes; no parsing in timed region. RSS includes runtime, allocator and warmup. Not a firebird-driver/fdb baseline.",
+  "results": {
+    "native": {
+      "build_id": "e55e27ca09843506dcd96cc01ee1fe115d1f9e845f4c440a4ed755aff8d7e06c",
+      "mode": "native",
+      "rows": 1000000,
+      "output_bytes": 17786001,
+      "sha256": "c120c7c5cd21c9739e2c995cd717937048c2670f55b276642aa3bf295c7e2a81",
+      "seconds": [
+        5.897611459004111,
+        5.916650749997643,
+        5.9296552919986425
+      ],
+      "median_seconds": 5.916650749997643,
+      "process_peak_rss_bytes": 78086144
+    },
+    "rows": {
+      "build_id": "e55e27ca09843506dcd96cc01ee1fe115d1f9e845f4c440a4ed755aff8d7e06c",
+      "mode": "rows",
+      "rows": 1000000,
+      "output_bytes": 17786001,
+      "sha256": "c120c7c5cd21c9739e2c995cd717937048c2670f55b276642aa3bf295c7e2a81",
+      "seconds": [
+        6.215407166004297,
+        6.340565416998288,
+        6.289220833001309
+      ],
+      "median_seconds": 6.289220833001309,
+      "process_peak_rss_bytes": 372244480
+    }
+  }
+}

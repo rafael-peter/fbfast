@@ -41,6 +41,7 @@ struct Connection {
     IAttachment* attachment = nullptr;
     ITransaction* transaction = nullptr;
     IResultSet* cursor = nullptr;
+    IBlob* blob = nullptr;
     uint64_t active_statement = 0;
     uint64_t next_statement = 1;
     std::map<uint64_t, std::unique_ptr<Prepared>> statements;
@@ -50,6 +51,7 @@ struct Connection {
         control->invalidate();
         // Reference release is the last-resort local handle cleanup. Protocol
         // close/rollback/detach is explicit on the owning worker before this.
+        if (blob) blob->release();
         if (cursor) cursor->release();
         statements.clear();
         if (transaction) transaction->release();

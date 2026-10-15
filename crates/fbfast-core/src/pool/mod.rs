@@ -7,6 +7,9 @@ mod delivery;
 mod maintenance;
 mod pending;
 mod scheduler;
+mod session;
+mod session_scope;
+mod session_worker;
 mod state;
 mod stream;
 mod stream_worker;
@@ -16,6 +19,7 @@ mod tests;
 mod tests_live;
 mod worker;
 mod worker_lifecycle;
+mod worker_query;
 
 use crate::{
     config::Config,
@@ -25,6 +29,7 @@ use crate::{
 };
 pub use delivery::DeliveryBudget;
 pub use pending::Pending;
+pub use session::Session;
 pub use state::Stats;
 use state::{Inner, Work};
 use std::{path::PathBuf, sync::Arc, time::Duration};
@@ -33,8 +38,18 @@ pub use stream::{Stream, StreamAction, StreamItem, StreamWait};
 #[derive(Debug)]
 pub enum Output {
     Rows(Rows),
+    Json(crate::sinks::json::JsonOutput),
     Plan(String),
     Ready,
+}
+impl Output {
+    pub(super) fn size(&self) -> Option<(u64, u64)> {
+        match self {
+            Self::Rows(rows) => Some((rows.count as u64, rows.bytes as u64)),
+            Self::Json(json) => Some((json.rows as u64, json.data.len() as u64)),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -92,6 +107,24 @@ impl Pool {
         })
     }
 
+    pub fn submit_json(
+        &self,
+        sql: String,
+        params: Vec<Value>,
+        json: crate::sinks::json::JsonOptions,
+        timeout: Option<f64>,
+    ) -> Result<Pending, Error> {
+        let inner = self.inner()?;
+        crate::statements::validate_read_query(&sql)?;
+        crate::execution::control::deadline(timeout)?;
+        inner.submit(Work::Json {
+            sql,
+            params,
+            json,
+            timeout,
+        })
+    }
+
     pub fn warmup(&self) -> Result<Vec<Pending>, Error> {
         let inner = self.inner()?;
         inner.submit_warmup()
@@ -103,6 +136,33 @@ impl Pool {
         batch_rows: Option<u32>,
         unique_names: bool,
         timeout: Option<f64>,
+    ) -> Result<Stream, Error> {
+        self.stream_output(sql, params, batch_rows, unique_names, timeout, None)
+    }
+    pub fn stream_json(
+        &self,
+        sql: String,
+        params: Vec<Value>,
+        batch_rows: Option<u32>,
+        json: (
+            crate::sinks::json::JsonOptions,
+            crate::sinks::json::JsonFormat,
+        ),
+        timeout: Option<f64>,
+    ) -> Result<Stream, Error> {
+        self.stream_output(sql, params, batch_rows, json.0.records, timeout, Some(json))
+    }
+    fn stream_output(
+        &self,
+        sql: String,
+        params: Vec<Value>,
+        batch_rows: Option<u32>,
+        unique_names: bool,
+        timeout: Option<f64>,
+        json: Option<(
+            crate::sinks::json::JsonOptions,
+            crate::sinks::json::JsonFormat,
+        )>,
     ) -> Result<Stream, Error> {
         crate::statements::validate_read_query(&sql)?;
         crate::execution::control::deadline(timeout)?;
@@ -118,6 +178,7 @@ impl Pool {
             params,
             batch_rows,
             unique_names,
+            json,
             timeout,
             producer: stream_worker::Producer {
                 sender,

@@ -1,7 +1,7 @@
 use super::{control::QueryOptions, ExecutionConnection};
 use crate::{
     config::Config,
-    decode::{bind, DecodePlan, Value},
+    decode::{bind, BlobReader, DecodePlan, Value},
     error::{Error, ErrorKind},
     sinks::rows::Rows,
     statements::cache::Entry,
@@ -13,15 +13,27 @@ pub(super) trait RowSink {
     fn before_fetch(&mut self) -> Result<bool, Error> {
         Ok(true)
     }
-    fn push(&mut self, plan: &DecodePlan, row: &[u8], config: &Config) -> Result<(), Error>;
+    fn push(
+        &mut self,
+        plan: &DecodePlan,
+        row: &[u8],
+        config: &Config,
+        blobs: &mut impl BlobReader,
+    ) -> Result<(), Error>;
     fn after_fetch(&mut self) -> Result<bool, Error> {
         Ok(true)
     }
 }
 
 impl RowSink for Rows {
-    fn push(&mut self, plan: &DecodePlan, row: &[u8], config: &Config) -> Result<(), Error> {
-        self.push(plan, row, config)
+    fn push(
+        &mut self,
+        plan: &DecodePlan,
+        row: &[u8],
+        config: &Config,
+        blobs: &mut impl BlobReader,
+    ) -> Result<(), Error> {
+        self.push(plan, row, config, blobs)
     }
 }
 
@@ -47,6 +59,14 @@ impl ExecutionConnection {
             .unwrap_or(0);
         self.native
             .open_cursor(entry.id, &parameters, native_timeout)?;
+        // Consume every BLOB before advancing its row. This also bounds decoded
+        // row streams to one variable-size row per batch, independently of the
+        // small wire message containing only IDs. Client wire buffering remains.
+        let batch_rows = if entry.plan.has_blobs() {
+            1
+        } else {
+            batch_rows
+        };
         loop {
             options.cancellation.check()?;
             check_deadline(deadline)?;
@@ -67,7 +87,13 @@ impl ExecutionConnection {
                     )
                 })?;
                 options.cancellation.check()?;
-                sink.push(&entry.plan, row, &self.config)?;
+                let mut blobs = super::blob::Blobs {
+                    native: &mut self.native,
+                    cancellation: options.cancellation,
+                    deadline,
+                    limit: self.config.max_blob_bytes,
+                };
+                sink.push(&entry.plan, row, &self.config, &mut blobs)?;
                 check_deadline(deadline)?;
             }
             if !sink.after_fetch()? || options.first || batch.eof {

@@ -36,11 +36,9 @@ impl ExecutionConnection {
         &mut self,
         deadline: std::time::Instant,
     ) -> Result<SessionInfo, Error> {
-        // Internal validation has a small fixed budget independent of the user's
-        // materialized-result quota. Even max_result_bytes=1 must allow attach.
-        let limits = (self.config.max_result_rows, self.config.max_result_bytes);
+        // The internal query has fixed-width fields and at most one result row.
+        let limit = self.config.max_result_rows;
         self.config.max_result_rows = Some(1);
-        self.config.max_result_bytes = Some(64 * 1024);
         let result = self.fetch_with(
             SESSION_SQL,
             &[],
@@ -52,7 +50,7 @@ impl ExecutionConnection {
                 cleaning: &|| Ok(false),
             },
         );
-        (self.config.max_result_rows, self.config.max_result_bytes) = limits;
+        self.config.max_result_rows = limit;
         let result = result?;
         let row = result
             .row(0)

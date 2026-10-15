@@ -22,6 +22,8 @@ fn main() {
         .file("bridge/statement.cpp")
         .file("bridge/metadata.cpp")
         .file("bridge/cursor.cpp")
+        .file("bridge/blob.cpp")
+        .file("bridge/decimal.cpp")
         .file("bridge/control.cpp")
         .warnings(true)
         .compile("fbfast_bridge");

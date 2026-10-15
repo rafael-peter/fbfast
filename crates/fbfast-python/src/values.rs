@@ -169,6 +169,7 @@ impl<'py> Converter<'py> {
             Value::Int(value) => value.into_py_any(self.py),
             Value::Float(value) => value.into_py_any(self.py),
             Value::Text(value) => value.into_py_any(self.py),
+            Value::Bytes(value) if value.len() >= 1024 * 1024 => self.bytes(value),
             Value::Bytes(value) => Ok(PyBytes::new(self.py, value).into_any().unbind()),
             Value::Decimal { coefficient, scale } => {
                 let text = coefficient.unsigned_abs().to_string();
@@ -237,6 +238,22 @@ impl<'py> Converter<'py> {
             list.append(self.row(rows, index, as_dict)?)?;
         }
         Ok(list.into_any().unbind())
+    }
+    pub fn bytes(&self, data: &[u8]) -> PyResult<Py<PyAny>> {
+        self.checkpoint()?;
+        let bytes = PyBytes::new_with(self.py, data.len(), |destination| {
+            for (target, source) in destination
+                .chunks_mut(1024 * 1024)
+                .zip(data.chunks(1024 * 1024))
+            {
+                // Unpublished bytes storage; PyO3 owns allocation and initialization.
+                self.py.detach(|| target.copy_from_slice(source));
+                self.checkpoint()?;
+            }
+            Ok(())
+        })?;
+        self.checkpoint()?;
+        Ok(bytes.into_any().unbind())
     }
 }
 

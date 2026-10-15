@@ -2,11 +2,12 @@
 use crate::{
     async_runtime::{self, CancelOnDrop, Control},
     errors::from_core,
+    executor::Executor as Pool,
     values::Converter,
 };
 use fbfast_core::{
     error::{Error, ErrorKind},
-    pool::{Output, Pending, Pool},
+    pool::{Output, Pending},
 };
 use pyo3::{exceptions::PyRuntimeError, prelude::*, types::PyList, IntoPyObjectExt};
 use std::{
@@ -20,6 +21,7 @@ pub enum Form {
     Rows { first: bool, as_dict: bool },
     Value,
     Plan,
+    Json(fbfast_core::sinks::json::JsonOptions),
 }
 
 pub(crate) fn admission(gate: &Arc<Semaphore>) -> PyResult<Arc<OwnedSemaphorePermit>> {
@@ -47,6 +49,7 @@ pub fn query<'py>(
     let permit = admission(gate)?;
     let parameters = Converter::new(py)?.params(params)?;
     let pending = match form {
+        Form::Json(json) => pool.submit_json(sql, parameters, json, timeout),
         Form::Plan => pool.submit_explain(sql, parameters, timeout),
         Form::Value => pool.submit_rows(sql, parameters, true, false, timeout),
         Form::Rows { first, as_dict } => pool.submit_rows(sql, parameters, first, as_dict, timeout),
@@ -57,7 +60,7 @@ pub fn query<'py>(
         let mut pending = pending;
         let output = wait(&mut pending, &control).await?;
         let budget = pending.delivery_budget().map_err(from_core)?;
-        tokio::task::spawn_blocking(move || {
+        let result = tokio::task::spawn_blocking(move || {
             // Keep admission counted until a cancelled materializer really exits.
             let _permit = permit;
             Python::attach(|py| {
@@ -72,6 +75,7 @@ pub fn query<'py>(
                 // Borrow buffers so their potentially large deallocation happens
                 // after Python::attach returns and the GIL has been released.
                 let result = match (&output, form) {
+                    (Output::Json(json), Form::Json(_)) => converter.bytes(&json.data),
                     (Output::Rows(rows), Form::Rows { first, as_dict }) => {
                         if first {
                             converter.row(rows, 0, as_dict)
@@ -95,7 +99,9 @@ pub fn query<'py>(
             })
         })
         .await
-        .map_err(|error| PyRuntimeError::new_err(error.to_string()))?
+        .map_err(|error| PyRuntimeError::new_err(error.to_string()))??;
+        pending.delivery_complete();
+        Ok(result)
     })
 }
 

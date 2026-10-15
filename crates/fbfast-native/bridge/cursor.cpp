@@ -19,7 +19,7 @@ extern "C" uint32_t fbfast_fetch(void* handle, void* data, uint32_t stride,
     auto* c = static_cast<Connection*>(handle);
     uint32_t rows = 0;
     guarded(c, error, [&](auto* status) {
-        require(c->cursor && c->active_statement, "No active cursor");
+        require(c->cursor && c->active_statement && !c->blob, "Fetch requires a cursor and no open BLOB");
         auto& s = c->statement(c->active_statement);
         require(stride >= s.output->getMessageLength(status), "Output message buffer too small");
         *eof = 0;
@@ -35,6 +35,7 @@ extern "C" uint32_t fbfast_fetch(void* handle, void* data, uint32_t stride,
 extern "C" void fbfast_close_cursor(void* handle, FbError* error) noexcept {
     auto* c = static_cast<Connection*>(handle);
     guarded(c, error, [&](auto* status) {
+        require(!c->blob, "Close BLOB before cursor");
         if (c->cursor) { c->cursor->close(status); c->cursor = nullptr; }
         c->active_statement = 0;
     });

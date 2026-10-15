@@ -3,4 +3,8 @@ pytest==8.4.2
 ruff==0.14.1
 mypy==1.18.2
 wheel==0.45.1
+fastapi==0.143.2
+starlette==1.8.0
+uvicorn==0.54.0
+anyio==4.15.1
 

@@ -85,6 +85,15 @@ impl From<fbfast_native::NativeError> for Error {
                 } else {
                     ErrorKind::Query
                 };
+                let message = if codes.contains(&335545064) {
+                    format!(
+                        "{message}. Check wire_crypt and server WireCrypt: Required and Disabled \
+                         cannot be combined. Use 'enabled' only if unencrypted connections are \
+                         acceptable; it negotiates encryption without requiring it."
+                    )
+                } else {
+                    message
+                };
                 Self {
                     kind,
                     message,

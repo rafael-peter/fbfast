@@ -1,4 +1,4 @@
-use super::Value;
+use super::{BlobReader, NoBlobs, Value};
 use crate::{
     config::Config,
     error::{Error, ErrorKind},
@@ -10,9 +10,13 @@ pub struct DecodePlan {
     pub schema: Metadata,
     trim_char: bool,
     none_as_utf8: bool,
+    has_blobs: bool,
 }
 
 impl DecodePlan {
+    pub fn has_blobs(&self) -> bool {
+        self.has_blobs
+    }
     /// Upper bound for one row of the currently supported fixed/text scalars.
     /// This accounts for decoded Value storage, not just wire message length.
     pub fn row_capacity_bytes(&self) -> Result<usize, Error> {
@@ -46,7 +50,7 @@ impl DecodePlan {
         for column in &schema.columns {
             if !matches!(
                 column.sql_type,
-                500 | 496 | 580 | 32752 | 482 | 480 | 32764 | 452 | 448 | 570 | 560 | 510
+                500 | 496 | 580 | 32752 | 482 | 480 | 32764 | 452 | 448 | 570 | 560 | 510 | 520
             ) {
                 return Err(Error::new(
                     ErrorKind::UnsupportedType,
@@ -57,8 +61,16 @@ impl DecodePlan {
                     ),
                 ));
             }
+            if column.sql_type == 520 && !matches!(column.subtype, 0 | 1) {
+                return Err(Error::new(
+                    ErrorKind::UnsupportedType,
+                    "describe",
+                    format!("BLOB subtype {} is not supported", column.subtype),
+                ));
+            }
         }
         Ok(Self {
+            has_blobs: schema.columns.iter().any(|c| c.sql_type == 520),
             schema,
             trim_char: config.trim_char,
             none_as_utf8,
@@ -66,6 +78,15 @@ impl DecodePlan {
     }
 
     pub fn value(&self, index: usize, row: &[u8]) -> Result<Value, Error> {
+        self.value_with_blobs(index, row, &mut NoBlobs)
+    }
+
+    pub fn value_with_blobs(
+        &self,
+        index: usize,
+        row: &[u8],
+        blobs: &mut impl BlobReader,
+    ) -> Result<Value, Error> {
         let c = self
             .schema
             .columns
@@ -101,6 +122,23 @@ impl DecodePlan {
                 _ => Err(conversion("Invalid BOOLEAN byte")),
             },
             452 | 448 => self.text(c, row),
+            520 => {
+                let binary =
+                    c.subtype == 0 || c.charset == 1 || (c.charset == 0 && !self.none_as_utf8);
+                let data = blobs.read(
+                    bytes(row, offset)?,
+                    if c.subtype == 0 { 0 } else { c.charset },
+                )?;
+                if binary {
+                    Ok(Value::Bytes(data))
+                } else {
+                    // Known charsets were transliterated by the official client;
+                    // explicit NONE fallback is validated here without replacement.
+                    String::from_utf8(data)
+                        .map(Value::Text)
+                        .map_err(|_| conversion("Invalid UTF8 BLOB text"))
+                }
+            }
             570 => Ok(Value::Date(i32::from_ne_bytes(bytes(row, offset)?))),
             560 => Ok(Value::Time(u32::from_ne_bytes(bytes(row, offset)?))),
             510 => Ok(Value::Timestamp {

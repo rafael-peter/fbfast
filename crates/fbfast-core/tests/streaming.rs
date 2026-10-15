@@ -18,7 +18,6 @@ fn owned_batches_match_materialized_rows_and_ignore_total_materialization_quota(
     c.close().unwrap();
     let mut config = config();
     config.max_result_rows = Some(1);
-    config.max_result_bytes = Some(1);
     let mut c = ExecutionConnection::connect(config, &client()).unwrap();
     let mut batches = Vec::new();
     let summary = c

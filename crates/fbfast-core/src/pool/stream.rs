@@ -28,6 +28,7 @@ pub enum StreamAction {
 pub enum StreamItem {
     Opened,
     Batch(Rows),
+    Json(crate::sinks::json::JsonOutput),
     End,
 }
 struct Completion {
@@ -216,6 +217,14 @@ impl StreamWait {
             }
         }
         if let Some(result) = shared.terminal() {
+            if self.action == StreamAction::Close && result.is_ok() {
+                shared
+                    .completion
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .pending
+                    .delivery_complete();
+            }
             *shared.phase.lock().unwrap_or_else(|e| e.into_inner()) =
                 if self.action == StreamAction::Close {
                     Phase::Closed
@@ -257,6 +266,7 @@ impl StreamWait {
                 StreamItem::Opened
             }
             (StreamAction::Next, Event::Batch(rows)) => StreamItem::Batch(rows),
+            (StreamAction::Next, Event::Json(json)) => StreamItem::Json(json),
             _ => {
                 return Err(Error::new(
                     ErrorKind::Query,

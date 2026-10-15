@@ -1,7 +1,7 @@
 use super::{control::QueryOptions, cursor::RowSink, ExecutionConnection};
 use crate::{
     config::Config,
-    decode::{DecodePlan, Value},
+    decode::{BlobReader, DecodePlan, Value},
     error::Error,
     sinks::rows::Rows,
 };
@@ -15,16 +15,16 @@ pub struct StreamSummary {
 
 /// Worker-side consumer. Waiting here must be bounded and cancellation-aware;
 /// no Python callbacks or objects belong in this path.
-pub trait BatchConsumer {
+pub trait BatchConsumer<B = Rows> {
     fn before_fetch(&mut self) -> Result<bool, Error> {
         Ok(true)
     }
     /// false closes early, preserving normal cursor/transaction cleanup.
-    fn batch(&mut self, rows: Rows) -> Result<bool, Error>;
+    fn batch(&mut self, rows: B) -> Result<bool, Error>;
 }
 
-impl<F: FnMut(Rows) -> Result<bool, Error>> BatchConsumer for F {
-    fn batch(&mut self, rows: Rows) -> Result<bool, Error> {
+impl<B, F: FnMut(B) -> Result<bool, Error>> BatchConsumer<B> for F {
+    fn batch(&mut self, rows: B) -> Result<bool, Error> {
         self(rows)
     }
 }
@@ -40,8 +40,14 @@ impl<C: BatchConsumer> RowSink for Batches<'_, C> {
     fn before_fetch(&mut self) -> Result<bool, Error> {
         self.consumer.before_fetch()
     }
-    fn push(&mut self, plan: &DecodePlan, row: &[u8], _: &Config) -> Result<(), Error> {
-        self.rows.push(plan, row, &self.config)
+    fn push(
+        &mut self,
+        plan: &DecodePlan,
+        row: &[u8],
+        _: &Config,
+        blobs: &mut impl BlobReader,
+    ) -> Result<(), Error> {
+        self.rows.push(plan, row, &self.config, blobs)
     }
     fn after_fetch(&mut self) -> Result<bool, Error> {
         if self.rows.count == 0 {
@@ -85,7 +91,6 @@ impl ExecutionConnection {
             // Streaming does not apply the cumulative materialization quota.
             // Native batch/cell bounds still apply; the caller owns retained batches.
             let mut config = connection.config.clone();
-            config.max_result_bytes = None;
             config.max_result_rows = None;
             let mut sink = Batches {
                 rows,
