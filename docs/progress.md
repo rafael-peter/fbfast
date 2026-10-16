@@ -10,7 +10,7 @@
   zeroizing Rust buffer and zeroized the temporary native attach buffer. The
   pinned `cargo-audit 0.22.2` scanned 123 dependencies with no advisory.
 - Local macOS arm64 / CPython 3.14 validation passed: **264 Python integration
-  tests**, **31 live Rust/C++ tests**, **26 packaging tests**, and **25 model
+  tests**, **31 live Rust/C++ tests**, **27 packaging tests**, and **25 model
   tests** with 2 SDK-only skips. Workspace tests, Clippy with warnings denied,
   Rustfmt, Ruff, Mypy, module boundaries, actionlint, fuzz-target compilation,
   vendor inventory, release guards, sdist build, and `twine check` also passed.
@@ -22,13 +22,13 @@
   against a 5.0.3 server. The release therefore keeps the 5.0.3 client and tests
   it against both server versions. This is local compatibility evidence, not
   homologation against an operational database.
-- Added RustSec, Linux ASan/UBSan, and deterministic fuzz gates to CI. The fuzz
-  harnesses compile locally; the sanitizer flags could not link the Apple
-  runtime, so sanitizer execution remains pending on the Linux CI job together
-  with the complete 20-wheel matrix.
-- Added the resumable `./scripts/release.py` flow and validated it with release
-  guard tests and a dry run. No commit, push, tag, PyPI upload, or GitHub Release
-  was created during this local validation.
+- Added RustSec, Linux ASan/UBSan, and deterministic fuzz gates to CI. The
+  corrected sanitizer runner linked both runtimes and loaded the official 5.0.3
+  client through the C++ bridge inside a Linux container with no finding.
+- The resumable `./scripts/release.py` flow created and pushed release commit
+  `787a3da`. Its first CI run exposed missing sanitizer runtime linkage and the
+  absent Windows `tzdata` dependency before any tag, PyPI upload, or GitHub
+  Release was created; this follow-up corrects both failures.
 
 ## Typed results and documentation — 2026-10-16 (local, unpublished)
 

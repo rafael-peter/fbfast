@@ -41,13 +41,12 @@ jobs:
       - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable action
         with:
           toolchain: '1.91.1'
-      - name: Fetch verified Firebird headers
+      - name: Fetch verified Firebird SDK
         run: python scripts/download_sdk.py
+      - name: Install Firebird client runtime dependency
+        run: sudo apt-get update && sudo apt-get install --yes libtommath1
       - name: Exercise C++ bridge with ASan and UBSan
-        env:
-          CXXFLAGS: -fsanitize=address,undefined -fno-omit-frame-pointer
-          RUSTFLAGS: -C link-arg=-fsanitize=address -C link-arg=-fsanitize=undefined
-        run: cargo test -p fbfast-native --lib --tests
+        run: python scripts/test_sanitizers.py
       - name: Install pinned fuzz toolchain
         run: |
           rustup toolchain install nightly-2026-10-15 --profile minimal

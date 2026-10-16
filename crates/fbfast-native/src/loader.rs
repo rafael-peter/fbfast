@@ -183,7 +183,8 @@ fn supported_version(banner: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::supported_version;
+    use super::{supported_version, Client};
+    use std::{env, path::Path};
 
     #[test]
     fn validates_real_and_legacy_banners() {
@@ -192,5 +193,16 @@ mod tests {
         assert!(!supported_version("LI-V5.0.2.1600 Firebird 5.0"));
         assert!(!supported_version("LI-V6.0.3.1000 Firebird 6.0"));
         assert!(!supported_version("corrupt"));
+    }
+
+    #[test]
+    fn loads_configured_client_through_cpp_bridge() {
+        let Some(path) = env::var_os("FBFAST_SANITIZER_CLIENT") else {
+            return;
+        };
+        let client = Client::load(Path::new(&path)).expect("sanitizer client must load");
+        assert_eq!(client.info().version, 5 * 256);
+        assert!(client.info().version_string.contains("Firebird 5.0"));
+        assert!(!client.info().root.as_os_str().is_empty());
     }
 }

@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 import sys
+import tomllib
 
 import pytest
 
@@ -69,3 +70,8 @@ def test_remote_annotated_tag_resolves_to_peeled_commit(monkeypatch):
         lambda *args: "tag-object\trefs/tags/v1.2.3\ncommit\trefs/tags/v1.2.3^{}",
     )
     assert release.remote_tag_commit("v1.2.3") == "commit"
+
+
+def test_windows_installs_the_timezone_database():
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]
+    assert "tzdata>=2024.1; sys_platform == 'win32'" in project["dependencies"]
