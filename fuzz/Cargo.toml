@@ -1,0 +1,34 @@
+[package]
+name = "fbfast-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "=0.4.10"
+fbfast-core = { path = "../crates/fbfast-core" }
+fbfast-native = { path = "../crates/fbfast-native", features = ["fuzzing"] }
+
+[[bin]]
+name = "sql_validation"
+path = "fuzz_targets/sql_validation.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "metadata"
+path = "fuzz_targets/metadata.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "status"
+path = "fuzz_targets/status.rs"
+test = false
+doc = false
+bench = false

@@ -40,6 +40,9 @@ def consumer():
             raise RuntimeError("Bundled ICU/timezone conversion failed")
         if rows[1] != (2, None, None, None, None):
             raise RuntimeError("NULL representation mismatch")
+        named = pool.fetch_val("SELECT NAMED_STAMP FROM WHEEL_SMOKE WHERE ID=1")
+        if named.isoformat() != "2024-11-03T01:30:00-05:00" or named.fold != 1:
+            raise RuntimeError("Named timezone/fold conversion mismatch")
         expected_models = [ModelRow(ID=row[0], LABEL=row[1], AMOUNT=row[2]) for row in rows]
         if pool.fetch_all(sql, model=ModelRow) != expected_models:
             raise RuntimeError("Pydantic model mismatch")

@@ -14,8 +14,9 @@ import urllib.request
 import zipfile
 
 
-def download(destination: Path) -> Path:
-    registry = json.loads(Path(__file__).with_name("release_assets.json").read_text())
+def download(destination: Path, manifest: Path | None = None) -> Path:
+    manifest = manifest or Path(__file__).with_name("release_assets.json")
+    registry = json.loads(manifest.read_text())
     key = f"{platform.system()}-{platform.machine()}"
     if key not in registry["assets"]:
         raise RuntimeError(f"No pinned Firebird SDK for {key}")
@@ -67,9 +68,12 @@ def download(destination: Path) -> Path:
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, default=Path(".tools/firebird-sdk"))
+    parser.add_argument("--manifest", type=Path)
+    parser.add_argument("--no-export", action="store_true",
+                        help="do not update FBFAST_CLIENT_ROOT in GITHUB_ENV")
     args = parser.parse_args()
-    root = download(args.out.resolve())
-    if output := os.environ.get("GITHUB_ENV"):
+    root = download(args.out.resolve(), args.manifest)
+    if not args.no_export and (output := os.environ.get("GITHUB_ENV")):
         with open(output, "a") as file:
             file.write(f"FBFAST_CLIENT_ROOT={root}\n")
     print(root)

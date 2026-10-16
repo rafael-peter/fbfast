@@ -18,14 +18,14 @@ pub enum Value {
 }
 
 impl Value {
-    pub fn payload_bytes(&self) -> usize {
+    pub fn retained_bytes(&self) -> usize {
         std::mem::size_of::<Self>()
             + match self {
-                Self::Text(value) | Self::DecFloat(value) => value.len(),
-                Self::Bytes(value) => value.len(),
-                Self::TimeTz { zone, .. } => zone.len(),
+                Self::Text(value) | Self::DecFloat(value) => value.capacity(),
+                Self::Bytes(value) => value.capacity(),
+                Self::TimeTz { zone, .. } => zone.capacity(),
                 Self::TimestampTz(value) => {
-                    std::mem::size_of::<fbfast_native::ZonedValue>() + value.zone.len()
+                    std::mem::size_of::<fbfast_native::ZonedValue>() + value.zone.capacity()
                 }
                 _ => 0,
             }

@@ -121,6 +121,7 @@ class FirebirdConfig:
         fetch_size: int = ...,
         batch_bytes: int = ...,
         prefetch_batches: int = ...,
+        max_result_bytes: int | None = ...,
         max_result_rows: int | None = ...,
         max_blob_bytes: int = ...,
         query_timeout: float | None = ...,
@@ -170,6 +171,7 @@ class FirebirdConfig:
             fetch_size: Linhas alvo por lote (int >= 1), também usadas quando batch_rows é omitido no stream. FB_FETCH_SIZE; padrão 5000.
             batch_bytes: Orçamento de bytes por lote (int >= 1); uma linha maior pode formar um lote único. Não limita toda a memória Python. FB_BATCH_BYTES; padrão 4_194_304 (4 MiB).
             prefetch_batches: Lotes antecipados além do corrente (int >= 0). FB_PREFETCH_BATCHES; padrão 1. Zero desativa antecipação.
+            max_result_bytes: Orçamento cumulativo por resultado materializado (int >= 1 | None); não limita streams nem é teto exato de RSS. FB_MAX_RESULT_BYTES; padrão 536_870_912 (512 MiB). None explícito desativa o limite.
             max_result_rows: Limite de linhas do resultado materializado (int >= 1 | None); não limita streams. FB_MAX_RESULT_ROWS; padrão None (sem limite). None explícito ignora o ambiente.
             max_blob_bytes: Limite por BLOB materializado (int >= 1), inclusive em streams. FB_MAX_BLOB_BYTES; padrão 67_108_864 (64 MiB). Para texto conhecido, conta bytes após transliteração para UTF8; exceder gera ResultLimitError.
             query_timeout: Prazo padrão da consulta, incluindo consumo e conversão Python (float | None, s). FB_QUERY_TIMEOUT; padrão 30.0. None explícito desativa esse prazo.
@@ -246,6 +248,8 @@ class FirebirdConfig:
     def batch_bytes(self) -> int: ...
     @property
     def prefetch_batches(self) -> int: ...
+    @property
+    def max_result_bytes(self) -> int | None: ...
     @property
     def max_result_rows(self) -> int | None: ...
     @property

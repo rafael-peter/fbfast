@@ -4,6 +4,7 @@ use crate::{
     decode::{DecodePlan, NativeReader, Value},
     error::{Error, ErrorKind},
     sinks::arrow::{ArrowBuilder, ArrowMode, ArrowOutput},
+    sinks::limits::add_materialized_bytes,
 };
 
 struct Materialized {
@@ -11,6 +12,7 @@ struct Materialized {
     output: ArrowOutput,
     capacity: usize,
     bytes: usize,
+    max_result_bytes: Option<u64>,
 }
 impl RowSink for Materialized {
     fn push(
@@ -35,8 +37,24 @@ impl RowSink for Materialized {
     fn after_fetch(&mut self) -> Result<bool, Error> {
         if self.builder.rows != 0 {
             let batch = self.builder.finish()?;
-            self.output.rows += batch.num_rows();
-            self.output.bytes += batch.get_array_memory_size();
+            let rows = self
+                .output
+                .rows
+                .checked_add(batch.num_rows())
+                .ok_or_else(|| {
+                    Error::new(
+                        ErrorKind::ResultLimit,
+                        "materialize",
+                        "Materialized result row counter overflow",
+                    )
+                })?;
+            let bytes = add_materialized_bytes(
+                self.output.bytes,
+                batch.get_array_memory_size(),
+                self.max_result_bytes,
+            )?;
+            self.output.rows = rows;
+            self.output.bytes = bytes;
             self.output.batches.push(batch);
             self.builder =
                 ArrowBuilder::with_schema(self.output.schema.clone(), self.capacity, self.bytes)?;
@@ -75,6 +93,7 @@ impl ExecutionConnection {
                 output,
                 capacity: capacity as usize,
                 bytes: connection.config.batch_bytes as usize,
+                max_result_bytes: connection.config.max_result_bytes,
             };
             connection.pump(entry, params, options, deadline, capacity, &mut sink)?;
             Ok(sink.output)

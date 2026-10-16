@@ -43,3 +43,26 @@ def test_models_async_and_named_pool(fb, config):
         finally:
             await fb.close_pool('models')
     asyncio.run(run())
+
+
+def test_materialized_byte_limit_precedes_python_model_conversion(fb, config):
+    limited = config(pool_size=1, max_result_bytes=1)
+    with fb.Pool(limited) as pool:
+        for options in ({}, {"as_dict": True}, {"model": Order}):
+            with pytest.raises(fb.ResultLimitError, match="max_result_bytes"):
+                pool.fetch_all(SQL, **options)
+        assert pool.fetch_all("SELECT ID FROM FBFAST_TYPES WHERE 1=0", model=Order) == []
+
+        with pytest.raises(fb.ResultLimitError, match="max_result_bytes"):
+            with pool.snapshot() as snapshot:
+                snapshot.fetch_all(SQL, model=Order)
+
+    async def run():
+        async with fb.Pool(limited) as pool:
+            with pytest.raises(fb.ResultLimitError, match="max_result_bytes"):
+                await pool.fetch_all_async(SQL, model=Order)
+            assert await pool.fetch_all_async(
+                "SELECT ID FROM FBFAST_TYPES WHERE 1=0", model=Order
+            ) == []
+
+    asyncio.run(run())

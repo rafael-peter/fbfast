@@ -2,6 +2,7 @@ use crate::{
     config::Config,
     decode::{DecodePlan, NativeReader, Value},
     error::{Error, ErrorKind},
+    sinks::limits::add_materialized_bytes,
 };
 
 /// Row-only storage: flattened cells avoid one heap vector allocation per row.
@@ -46,16 +47,11 @@ impl Rows {
         }
         for index in 0..self.names.len() {
             let value = plan.value_with_native(index, message, native)?;
-            self.bytes = self
-                .bytes
-                .checked_add(value.payload_bytes())
-                .ok_or_else(|| {
-                    Error::new(
-                        ErrorKind::ResultLimit,
-                        "materialize",
-                        "Result byte counter overflow",
-                    )
-                })?;
+            self.bytes = add_materialized_bytes(
+                self.bytes,
+                value.retained_bytes(),
+                config.max_result_bytes,
+            )?;
             self.cells.push(value);
         }
         self.count += 1;

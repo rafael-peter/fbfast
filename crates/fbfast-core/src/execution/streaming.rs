@@ -92,6 +92,7 @@ impl ExecutionConnection {
             // Native batch/cell bounds still apply; the caller owns retained batches.
             let mut config = connection.config.clone();
             config.max_result_rows = None;
+            config.max_result_bytes = None;
             let mut sink = Batches {
                 rows,
                 config,

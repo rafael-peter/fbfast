@@ -24,6 +24,8 @@ compila release, verifica a pasta copiada, instala o wheel exato e consulta um
 servidor Firebird descartável criado a partir de sua própria extração do SDK.
 O smoke inclui Unicode, NULL, Decimal, float, timezone/ICU, JSON, Arrow, Polars,
 streaming, async e transação read-only efetiva. Nenhum banco externo é usado.
+As variantes Python 3.14 também repetem o smoke contra servidor 5.0.4, mantendo
+o cliente 5.0.3 empacotado em todas as plataformas.
 
 Ações e imagens manylinux estão fixadas por commit/digest. O Linux audita o wheel
 inteiro após incluir as bibliotecas dinâmicas. O job de publicação exige a matriz
@@ -58,17 +60,24 @@ O job `publish` tem `id-token: write`, usa OIDC e gera atestações. Nenhum secr
 
 ## Publicar uma versão
 
-1. Atualizar a mesma versão em `pyproject.toml`, `Cargo.toml` e
-   `python/fbfast/__init__.py`; atualizar o lock Cargo se necessário.
-2. Commitar/revisar as alterações e enviar para `main`. Conferir o workflow de
-   build/teste antes de criar a tag.
-3. Criar/enviar a tag `v<versão>`, por exemplo `v0.1.0`. `release.yml` recompila,
-   testa a matriz inteira e publica os artefatos dessa tag.
-4. Conferir o job `publish` e a página do projeto no PyPI. Só a partir daí a versão
-   pode ser considerada publicada e instalada de lá.
-5. Criar a GitHub Release usando a tag existente, com notas e link para o PyPI.
-   O workflow atual publica no PyPI; a criação da página em Releases é uma etapa
-   separada. Não mover uma tag de versão já publicada.
+Depois de atualizar a mesma versão em `pyproject.toml`, `Cargo.toml` e
+`python/fbfast/__init__.py`, preparar `docs/releases/<versão>.md` e executar:
+
+```sh
+./scripts/release.py
+```
+
+Esse comando mostra todos os arquivos que entrarão no commit e pede uma única
+confirmação. Em seguida ele valida a versão, cria o commit, envia `main`, aguarda
+o workflow de build/teste, cria e envia a tag, aguarda a publicação no PyPI e
+cria a GitHub Release com as notas da versão. `--yes` elimina a confirmação e
+`--dry-run` valida o estado sem modificar Git ou serviços externos.
+
+O processo pode ser executado novamente depois de uma interrupção: commit, push,
+tag e GitHub Release já existentes são reconhecidos. Tags publicadas são
+imutáveis; se uma execução do workflow de release falhar, corrija ou reexecute o
+workflow no GitHub e rode o comando novamente para concluir a página da release.
+O computador precisa ter `git`, `gh` autenticado e acesso ao remote `origin`.
 
 O autor confirmou o cadastro do pending publisher em 16/10/2026. Esse estado
 é esperado antes da primeira publicação: o primeiro upload cria o projeto e

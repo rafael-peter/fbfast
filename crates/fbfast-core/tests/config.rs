@@ -27,6 +27,7 @@ fn defaults_and_secret_are_safe() {
     assert_eq!(c.pool_size, 8);
     assert_eq!(c.fetch_size, 5000);
     assert_eq!(c.wire_crypt, "required");
+    assert_eq!(c.max_result_bytes, Some(512 * 1024 * 1024));
     assert_eq!(c.max_result_rows, None);
     assert_eq!(c.password.expose(), "secret-marker");
     assert!(!format!("{c:?}").contains("secret-marker"));
@@ -84,6 +85,7 @@ fn rejects_invalid_values_without_echoing_them() {
         ("acquire_timeout", json!(0)),
         ("wire_compression", json!("secret-marker")),
         ("rule", json!("secret-marker")),
+        ("max_result_bytes", json!(0)),
         ("max_result_rows", json!(-1)),
     ] {
         let mut input = required();
@@ -117,12 +119,14 @@ fn optional_limits_and_checked_duration() {
         required(),
         [
             ("FB_MAX_RESULT_ROWS".into(), "none".into()),
+            ("FB_MAX_RESULT_BYTES".into(), "none".into()),
             ("FB_QUERY_TIMEOUT".into(), "NoNe".into()),
         ]
         .into(),
     )
     .unwrap();
     assert_eq!(c.max_result_rows, None);
+    assert_eq!(c.max_result_bytes, None);
     assert_eq!(c.query_timeout, None);
     let mut input = required();
     input.insert("connect_timeout".into(), json!(4_294_967.296));

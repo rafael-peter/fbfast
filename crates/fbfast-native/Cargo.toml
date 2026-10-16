@@ -4,9 +4,13 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 
+[features]
+fuzzing = []
+
 [dependencies]
 libloading.workspace = true
 thiserror.workspace = true
+zeroize.workspace = true
 
 [build-dependencies]
 cc.workspace = true

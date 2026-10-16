@@ -40,10 +40,10 @@ impl Table {
         );
         // PyO3 owns the ABI struct. Its Drop invokes Arrow's release callback
         // only if still live; consumers move it and null the original release.
-        PyCapsule::new(
+        PyCapsule::new_with_value(
             py,
             FFI_ArrowArrayStream::new(Box::new(reader)),
-            Some(c"arrow_array_stream".into()),
+            c"arrow_array_stream",
         )
     }
     #[getter]

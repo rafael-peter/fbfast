@@ -29,6 +29,11 @@ Chamadas antigas com max_result_bytes geram ConfigurationError/unknown option;
 FB_MAX_RESULT_BYTES deixa de ser uma variável reconhecida. Como os demais nomes
 FB_* desconhecidos, ela é ignorada. Não há alias ou opção obsoleta silenciosa.
 
+Esse trecho foi posteriormente substituído pela decisão
+[`0019-security-and-materialization-limits.md`](0019-security-and-materialization-limits.md),
+que restaurou o limite cumulativo por materialização com padrão de 512 MiB. Ele
+permanece aqui como registro da decisão original.
+
 O padrão wire_crypt continua required, com True equivalente a required e False
 a disabled. Enabled negocia criptografia e permite conexão sem ela; não é uma
 garantia de tráfego criptografado. Não há fallback automático a partir de required.

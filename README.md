@@ -26,8 +26,8 @@ with Pool(FirebirdConfig()) as pool:
         print(order.ID, order.CUSTOMER)
 ```
 
-> The `model=` API is new in 0.2.0. This checkout prepares that release;
-> publication is not yet confirmed. Version 0.1.0 does not include this feature.
+> The `model=` API was introduced in 0.2.0. This checkout prepares the 0.2.1
+> security update; publication is not yet confirmed.
 
 ## Why fbfast?
 
@@ -108,20 +108,39 @@ config = FirebirdConfig(
     min_idle=1,
     query_timeout=30.0,
     max_result_rows=100_000,
+    max_result_bytes=512 * 1024 * 1024,
     env_file=False,
 )
 ```
 
 Omitted query timeouts inherit `query_timeout`; `timeout=None` disables the
 individual query deadline. `max_result_rows` defaults to `None` (unlimited)
-and applies to materialized results, not streams. `batch_bytes` controls batch
-size, rather than a total result memory limit. `max_result_bytes` is no longer
-an accepted setting.
+and applies to materialized results. `max_result_bytes` defaults to 512 MiB and
+limits each result materialized as rows, dictionaries, Pydantic models, JSON,
+Arrow, or Polars. Set it to `None` only when the caller provides another bound. It is an
+accounting limit for retained core buffers, not an exact process-RSS ceiling;
+temporary conversion buffers and concurrent results can use more memory.
+Streams use `batch_bytes`, `prefetch_batches`, and backpressure instead of a
+cumulative byte limit.
 
 Wire encryption defaults to `wire_crypt="required"`, with no silent downgrade.
 `"enabled"` negotiates encryption but permits an unencrypted connection;
 `"disabled"` disables it. Boolean `True`/`False` map to required/disabled.
 The current executor requires UTF8 connections.
+
+## Security boundary
+
+fbfast rejects common write statements lexically, verifies the prepared
+statement type, and opens Firebird `READ ONLY` transactions. These three gates
+reduce accidental writes, but they do not turn arbitrary SQL into a sandbox.
+Selectable procedures, functions, UDRs, generators, and temporary tables can
+have effects that transaction rollback does not undo.
+
+Run the library with a dedicated database account and a minimal role containing
+only the required `SELECT` grants. Do not grant unnecessary `EXECUTE` or
+`USAGE`. If SQL comes from an HTTP endpoint, an end user, or a language model,
+place an allowlist of application queries above the driver. See the complete
+[security model and deployment guidance](docs/security.md).
 
 ## Choose your result
 
@@ -346,8 +365,10 @@ coverage remain on the [roadmap](docs/roadmap.md).
 ## Development
 
 Source builds require Rust 1.91.1, a C++ toolchain, a supported CPython, and a
-Firebird 5.0.x SDK/runtime (5.0.3 or newer). The build does not download the
-client implicitly. Install development dependencies from `requirements-dev.txt`.
+Firebird 5.0.x SDK/runtime (5.0.3 or newer). Published wheels bundle the pinned
+Firebird 5.0.3 client and test servers 5.0.3 and 5.0.4. The build does not
+download the client implicitly. Install development dependencies from
+`requirements-dev.txt`.
 
 ```sh
 python3.14 scripts/build_vendor.py --release --out dist/vendor \

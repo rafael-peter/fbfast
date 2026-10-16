@@ -61,7 +61,7 @@ def test_stream_prefetch_is_bounded_and_slot_stays_reserved(fb, config, prefetch
 
 
 def test_stream_does_not_apply_total_materialization_limit(fb, config):
-    with fb.Pool(config(max_result_rows=1)) as pool:
+    with fb.Pool(config(max_result_rows=1, max_result_bytes=1)) as pool:
         with pytest.raises(fb.ResultLimitError):
             pool.fetch_all(MANY)
         with pool.stream(MANY, batch_rows=20) as batches:

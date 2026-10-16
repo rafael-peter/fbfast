@@ -144,6 +144,17 @@ def test_analytical_limits_aliases_and_cleanup(fb, config, consumer):
         assert pool.stats()["leased"] == 0
 
 
+@pytest.mark.parametrize("consumer", ["arrow", "polars"])
+def test_analytical_byte_limit_cleans_up_and_preserves_empty_schema(fb, config, consumer):
+    with fb.Pool(config(pool_size=1, max_result_bytes=1)) as pool:
+        fetch = getattr(pool, f"fetch_{consumer}")
+        with pytest.raises(fb.ResultLimitError, match="max_result_bytes"):
+            fetch("SELECT ID FROM FBFAST_TYPES")
+        empty = fetch("SELECT ID FROM FBFAST_TYPES WHERE 1=0")
+        assert len(empty) == 0
+        assert pool.stats()["idle"] == 1
+
+
 def test_arrow_capsules_share_buffers_and_outlive_exporter_and_pool(fb, config, monkeypatch):
     import fbfast.analytics as analytics
     monkeypatch.setattr(analytics, "_convert", lambda native, arrow: native)

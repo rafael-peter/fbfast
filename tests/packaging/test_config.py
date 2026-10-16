@@ -19,6 +19,7 @@ assert (config.host, config.database, config.user) == ('from-environment', 'fixt
 assert config.query_timeout == 12.5 and config.wire_compression is True
 assert config.port == 3050 and config.pool_size == 8 and config.min_idle == 2
 assert config.wire_crypt == 'required' and config.max_result_rows is None
+assert config.max_result_bytes == 512 * 1024 * 1024
 assert fbfast.FirebirdConfig(host='explicit').host == 'explicit'
 del os.environ['FB_HOST']
 assert fbfast.FirebirdConfig().host == 'localhost'
@@ -50,7 +51,7 @@ for missing in base:
     assert result.returncode == 0, result.stderr
 
 
-def test_only_row_limit_remains_in_config(consumer: Path) -> None:
+def test_materialized_result_limits_are_configurable(consumer: Path) -> None:
     result = execute(
         consumer,
         """
@@ -59,14 +60,28 @@ os.environ.update(FB_DATABASE='fixture', FB_USER='reader', FB_PASSWORD='secret',
                   FB_MAX_RESULT_BYTES='1', FB_MAX_RESULT_ROWS='17')
 config = fbfast.FirebirdConfig()
 assert config.max_result_rows == 17
-assert not hasattr(config, 'max_result_bytes')
+assert config.max_result_bytes == 1
 assert fbfast.FirebirdConfig(max_result_rows=None).max_result_rows is None
-try:
-    fbfast.FirebirdConfig(max_result_bytes=1)
-except fbfast.ConfigurationError as exc:
-    assert 'max_result_bytes' in str(exc) and 'unknown option' in str(exc)
-else:
-    raise AssertionError('removed option still accepted')
+assert fbfast.FirebirdConfig(max_result_bytes=None).max_result_bytes is None
+assert fbfast.FirebirdConfig(max_result_bytes=123).max_result_bytes == 123
+""",
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_result_byte_limit_rejects_non_positive_values(consumer: Path) -> None:
+    result = execute(
+        consumer,
+        """
+import fbfast, os
+os.environ.update(FB_DATABASE='fixture', FB_USER='reader', FB_PASSWORD='secret')
+for value in (0, -1):
+    try:
+        fbfast.FirebirdConfig(max_result_bytes=value)
+    except fbfast.ConfigurationError as exc:
+        assert 'max_result_bytes' in str(exc)
+    else:
+        raise AssertionError(f'invalid limit accepted: {value}')
 """,
     )
     assert result.returncode == 0, result.stderr

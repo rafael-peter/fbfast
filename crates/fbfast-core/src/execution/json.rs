@@ -4,6 +4,7 @@ use crate::{
     decode::{DecodePlan, NativeReader, Value},
     error::{Error, ErrorKind},
     sinks::json::{JsonOptions, JsonOutput, JsonWriter},
+    sinks::limits::check_materialized_bytes,
 };
 
 struct Materialized {
@@ -32,6 +33,7 @@ impl RowSink for Materialized {
             self.output.data.push(b',');
         }
         self.writer.row(plan, row, &mut self.output.data, native)?;
+        check_materialized_bytes(self.output.data.len(), config.max_result_bytes)?;
         self.output.rows += 1;
         Ok(())
     }
@@ -61,6 +63,7 @@ impl ExecutionConnection {
                 &mut sink,
             )?;
             sink.output.data.push(b']');
+            check_materialized_bytes(sink.output.data.len(), connection.config.max_result_bytes)?;
             Ok(sink.output)
         })
     }

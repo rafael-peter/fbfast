@@ -54,13 +54,15 @@ impl Connection {
             .ok_or(NativeError::InvalidInput("Unterminated time zone"))?;
         let zone = std::str::from_utf8(&out.zone[..length])
             .map_err(|_| NativeError::InvalidInput("Invalid time zone encoding"))?;
-        if zone.is_empty()
-            || zone.starts_with("GMT*")
-            || out.utc_time >= 864_000_000
-            || out.local_time >= 864_000_000
-        {
+        if zone.is_empty() {
+            return Err(NativeError::InvalidInput("Native time zone is empty"));
+        }
+        if zone.starts_with("GMT*") {
+            return Err(NativeError::InvalidInput("Native time zone ID is unknown"));
+        }
+        if out.utc_time >= 864_000_000 || out.local_time >= 864_000_000 {
             return Err(NativeError::InvalidInput(
-                "Unrepresentable native time zone",
+                "Native zoned time is out of range",
             ));
         }
         Ok(ZonedValue {

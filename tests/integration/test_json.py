@@ -76,6 +76,26 @@ def test_json_aliases_orientation_and_materialized_row_limit(fb, config):
         assert pool.fetch_json("SELECT ID FROM FBFAST_TYPES WHERE ID=1") == b'[{"ID":1}]'
 
 
+def test_json_materialized_byte_limit_counts_serialized_output(fb, config):
+    with fb.Pool(config(pool_size=1, max_result_bytes=2)) as pool:
+        assert pool.fetch_json("SELECT ID FROM FBFAST_TYPES WHERE 1=0") == b"[]"
+        with pytest.raises(fb.ResultLimitError, match="max_result_bytes"):
+            pool.fetch_json("SELECT ID FROM FBFAST_TYPES WHERE ID=1")
+        assert pool.fetch_json("SELECT ID FROM FBFAST_TYPES WHERE 1=0") == b"[]"
+
+
+def test_json_byte_limit_counts_escaping_and_base64_exactly(fb, config):
+    sql = "SELECT CAST(? AS VARCHAR(20) CHARACTER SET OCTETS) AS B FROM RDB$DATABASE"
+    value = b'\x00\xff\"\n'
+    with fb.Pool(config(pool_size=1)) as pool:
+        expected = pool.fetch_json(sql, [value], json_binary="base64")
+    with fb.Pool(config(pool_size=1, max_result_bytes=len(expected))) as pool:
+        assert pool.fetch_json(sql, [value], json_binary="base64") == expected
+    with fb.Pool(config(pool_size=1, max_result_bytes=len(expected) - 1)) as pool:
+        with pytest.raises(fb.ResultLimitError, match="max_result_bytes"):
+            pool.fetch_json(sql, [value], json_binary="base64")
+
+
 @pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
 def test_json_non_finite_policy_with_real_float_binding(fb, config, value):
     with fb.Pool(config(pool_size=1)) as pool:

@@ -37,8 +37,9 @@ impl ExecutionConnection {
         deadline: std::time::Instant,
     ) -> Result<SessionInfo, Error> {
         // The internal query has fixed-width fields and at most one result row.
-        let limit = self.config.max_result_rows;
+        let limits = (self.config.max_result_rows, self.config.max_result_bytes);
         self.config.max_result_rows = Some(1);
+        self.config.max_result_bytes = None;
         let result = self.fetch_with(
             SESSION_SQL,
             &[],
@@ -50,7 +51,7 @@ impl ExecutionConnection {
                 cleaning: &|| Ok(false),
             },
         );
-        self.config.max_result_rows = limit;
+        (self.config.max_result_rows, self.config.max_result_bytes) = limits;
         let result = result?;
         let row = result
             .row(0)

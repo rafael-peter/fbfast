@@ -20,3 +20,8 @@ pub use metadata::{Column, Metadata};
 pub use statement::StatementId;
 pub use status::{DatabaseErrorKind, NativeError};
 pub use zoned::{ZonedValue, ZONE_CAPACITY};
+
+#[cfg(feature = "fuzzing")]
+pub use metadata::fuzz_metadata;
+#[cfg(feature = "fuzzing")]
+pub use status::fuzz_status;

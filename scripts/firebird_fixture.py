@@ -121,7 +121,6 @@ def start() -> dict[str, Any]:
     env = {
         **os.environ,
         "FIREBIRD_ROOT_PASSWORD": admin_password,
-        "FIREBIRD_PASSWORD": reader_password,
     }
     result = docker(
         "run",
@@ -136,10 +135,6 @@ def start() -> dict[str, Any]:
         "/var/lib/firebird/data",
         "--env",
         "FIREBIRD_ROOT_PASSWORD",
-        "--env",
-        "FIREBIRD_PASSWORD",
-        "--env",
-        "FIREBIRD_USER=FBFAST_READER",
         "--env",
         "FIREBIRD_DATABASE=fbfast.fdb",
         "--env",
@@ -158,6 +153,13 @@ def start() -> dict[str, Any]:
             time.sleep(0.25)
         else:
             raise RuntimeError("Disposable Firebird did not become ready in 45 seconds")
+        created_user = sql(
+            f"CREATE USER FBFAST_READER PASSWORD '{reader_password}' REVOKE ADMIN ROLE;\n",
+            admin_password,
+        )
+        if created_user.returncode:
+            detail = created_user.stderr.replace(reader_password, "<redacted>").strip()
+            raise RuntimeError(f"Cannot create restricted fixture user: {detail}")
         initialized = sql((ROOT / "tests/integration/fixture.sql").read_text(), admin_password)
         if initialized.returncode:
             raise RuntimeError(f"Fixture SQL failed: {initialized.stderr.strip()}")

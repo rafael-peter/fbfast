@@ -1,12 +1,17 @@
 use serde::Serialize;
-use std::fmt;
+use std::{fmt, sync::Arc};
+use zeroize::Zeroizing;
 
 #[derive(Clone)]
-pub struct Secret(pub(crate) String);
+pub struct Secret(Arc<Zeroizing<String>>);
 
 impl Secret {
+    pub(crate) fn new(value: String) -> Self {
+        Self(Arc::new(Zeroizing::new(value)))
+    }
+
     pub fn expose(&self) -> &str {
-        &self.0
+        self.0.as_str()
     }
 }
 
@@ -50,6 +55,7 @@ pub struct Config {
     pub fetch_size: u32,
     pub batch_bytes: u64,
     pub prefetch_batches: u32,
+    pub max_result_bytes: Option<u64>,
     pub max_result_rows: Option<u64>,
     pub max_blob_bytes: u64,
     pub query_timeout: Option<f64>,

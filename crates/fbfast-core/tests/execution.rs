@@ -59,18 +59,18 @@ fn handshake_observes_settings_and_is_not_charged_to_result_budget() {
         let mut options = config();
         options.session_time_zone = requested.into();
         options.max_result_rows = Some(1);
+        options.max_result_bytes = Some(1);
         let mut c = ExecutionConnection::connect(options, &library()).unwrap();
         let info = c.session_info();
         assert_eq!(info.time_zone, effective);
         assert_eq!(info.charset, "UTF8");
         assert!(info.wire_encrypted);
         assert!(matches!(info.network_protocol.as_str(), "TCPv4" | "TCPv6"));
-        assert_eq!(
-            c.fetch_rows("SELECT ID FROM FBFAST_TYPES", &[], false, None)
-                .unwrap_err()
-                .kind,
-            ErrorKind::ResultLimit
-        );
+        let error = c
+            .fetch_rows("SELECT ID FROM FBFAST_TYPES", &[], false, None)
+            .unwrap_err();
+        assert_eq!(error.kind, ErrorKind::ResultLimit);
+        assert!(error.message.contains("max_result_bytes"));
         c.close().unwrap();
     }
 }

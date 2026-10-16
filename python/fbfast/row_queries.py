@@ -85,6 +85,7 @@ class RowQueries:
         Model validation follows fetching and is outside the query timeout.
         Async validation runs in a thread; cancellation cannot stop user validators.
         as_dict is redundant when model is supplied. ValidationError propagates.
+        max_result_rows and max_result_bytes are enforced before Python conversion.
         """
         _check_model(model)
         rows = self._executor.rows(

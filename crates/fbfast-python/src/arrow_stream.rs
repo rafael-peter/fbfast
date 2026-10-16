@@ -35,10 +35,10 @@ pub fn export<'py>(
         schema,
         ended: false,
     };
-    let capsule = PyCapsule::new(
+    let capsule = PyCapsule::new_with_value(
         py,
         FFI_ArrowArrayStream::new(Box::new(reader)),
-        Some(c"arrow_array_stream".into()),
+        c"arrow_array_stream",
     )?;
     *exported = true;
     Ok(capsule)

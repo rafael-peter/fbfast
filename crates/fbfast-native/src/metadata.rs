@@ -50,22 +50,8 @@ impl Connection {
                 );
             }
             status.check("metadata")?;
-            let name: Vec<u8> = raw
-                .name
-                .iter()
-                .take_while(|c| **c != 0)
-                .map(|c| *c as u8)
-                .collect();
-            let name = String::from_utf8(name)
-                .map_err(|_| NativeError::InvalidInput("Column name is not UTF8"))?;
-            let payload = raw.length as u64 + if raw.sql_type == 448 { 2 } else { 0 };
-            if raw.offset as u64 + payload > message_length as u64
-                || raw.null_offset as u64 + 2 > message_length as u64
-            {
-                return Err(NativeError::InvalidInput(
-                    "Metadata offset exceeds message size",
-                ));
-            }
+            let name = column_name(&raw)?;
+            validate_offsets(&raw, message_length)?;
             columns.push(Column {
                 name,
                 sql_type: raw.sql_type,
@@ -82,4 +68,46 @@ impl Connection {
             message_length,
         })
     }
+}
+
+fn column_name(raw: &ffi::RawColumn) -> Result<String, NativeError> {
+    let name = raw
+        .name
+        .iter()
+        .take_while(|c| **c != 0)
+        .map(|c| *c as u8)
+        .collect();
+    String::from_utf8(name).map_err(|_| NativeError::InvalidInput("Column name is not UTF8"))
+}
+
+fn validate_offsets(raw: &ffi::RawColumn, message_length: u32) -> Result<(), NativeError> {
+    let payload = raw.length as u64 + if raw.sql_type == 448 { 2 } else { 0 };
+    if raw.offset as u64 + payload > message_length as u64
+        || raw.null_offset as u64 + 2 > message_length as u64
+    {
+        Err(NativeError::InvalidInput(
+            "Metadata offset exceeds message size",
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(feature = "fuzzing")]
+pub fn fuzz_metadata(data: &[u8]) {
+    let mut raw = ffi::RawColumn::default();
+    for (target, source) in raw.name.iter_mut().zip(data.iter().copied()) {
+        *target = source as std::ffi::c_char;
+    }
+    let number = |start: usize| {
+        u32::from_le_bytes(std::array::from_fn(|offset| {
+            data.get(start + offset).copied().unwrap_or_default()
+        }))
+    };
+    raw.sql_type = number(0);
+    raw.length = number(4);
+    raw.offset = number(8);
+    raw.null_offset = number(12);
+    let _ = column_name(&raw);
+    let _ = validate_offsets(&raw, number(16));
 }

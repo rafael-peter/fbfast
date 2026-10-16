@@ -1,7 +1,7 @@
 use crate::{ffi, Client, NativeError, StatementId};
 use std::{
     collections::BTreeSet,
-    ffi::CString,
+    ffi::{c_char, CString},
     marker::PhantomData,
     ptr::NonNull,
     rc::Rc,
@@ -10,8 +10,32 @@ use std::{
         Arc,
     },
 };
+use zeroize::Zeroize;
 
 static NEXT_OWNER: AtomicU64 = AtomicU64::new(1);
+
+struct SecretCString(Vec<u8>);
+
+impl SecretCString {
+    fn new(value: &str) -> Result<Self, NativeError> {
+        if value.as_bytes().contains(&0) {
+            return Err(NativeError::InvalidInput("Attach option contains NUL"));
+        }
+        let mut bytes = value.as_bytes().to_vec();
+        bytes.push(0);
+        Ok(Self(bytes))
+    }
+
+    fn as_ptr(&self) -> *const c_char {
+        self.0.as_ptr().cast()
+    }
+}
+
+impl Drop for SecretCString {
+    fn drop(&mut self) {
+        self.0.zeroize();
+    }
+}
 
 /// Only transport parameters belong here; defaults and application validation live in core.
 pub struct AttachOptions<'a> {
@@ -62,7 +86,6 @@ impl Connection {
         let values = [
             options.database,
             options.user,
-            options.password,
             options.role,
             options.charset,
             options.time_zone,
@@ -74,15 +97,16 @@ impl Connection {
             CString::new(s).map_err(|_| NativeError::InvalidInput("Attach option contains NUL"))
         })
         .collect::<Result<Vec<_>, _>>()?;
+        let password = SecretCString::new(options.password)?;
         let raw = ffi::RawAttach {
             database: values[0].as_ptr(),
             user: values[1].as_ptr(),
-            password: values[2].as_ptr(),
-            role: values[3].as_ptr(),
-            charset: values[4].as_ptr(),
-            time_zone: values[5].as_ptr(),
-            app_name: values[6].as_ptr(),
-            config: values[7].as_ptr(),
+            password: password.as_ptr(),
+            role: values[2].as_ptr(),
+            charset: values[3].as_ptr(),
+            time_zone: values[4].as_ptr(),
+            app_name: values[5].as_ptr(),
+            config: values[6].as_ptr(),
             connect_seconds: options.connect_seconds,
         };
         let mut status = ffi::RawStatus::default();

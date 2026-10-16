@@ -72,3 +72,20 @@ fn text(value: &[std::ffi::c_char]) -> String {
         .collect();
     String::from_utf8_lossy(&bytes).into_owned()
 }
+
+#[cfg(feature = "fuzzing")]
+pub fn fuzz_status(data: &[u8]) {
+    let mut raw = crate::ffi::RawStatus {
+        category: data.first().copied().unwrap_or_default() as i32 % 3,
+        kind: data.get(1).copied().unwrap_or_default() as u32,
+        code_count: data.get(2).copied().unwrap_or_default() as u32,
+        ..Default::default()
+    };
+    for (target, source) in raw.message.iter_mut().zip(data.iter().skip(3).copied()) {
+        *target = source as std::ffi::c_char;
+    }
+    for (target, source) in raw.sqlstate.iter_mut().zip(data.iter().skip(11).copied()) {
+        *target = source as std::ffi::c_char;
+    }
+    let _ = raw.check("fuzz_status");
+}

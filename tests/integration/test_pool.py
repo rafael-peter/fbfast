@@ -76,6 +76,16 @@ def test_errors_cleanup_limits_and_names(fb, config):
     assert wrong_role.stats()["closed"] == 2
 
 
+def test_materialized_row_byte_limit_cleans_up_and_keeps_pool_reusable(fb, config):
+    with fb.Pool(config(pool_size=1, max_result_bytes=1)) as pool:
+        with pytest.raises(fb.ResultLimitError, match="max_result_bytes") as failure:
+            pool.fetch_all("SELECT ID FROM FBFAST_TYPES")
+        assert "limit=1" in str(failure.value)
+        assert pool.fetch_all("SELECT ID FROM FBFAST_TYPES WHERE 1=0") == []
+        assert 'Table "FBFAST_TYPES"' in pool.explain("SELECT ID FROM FBFAST_TYPES")
+        assert pool.stats()["idle"] == 1
+
+
 def test_concurrent_queries_respect_attachment_ceiling(fb, config):
     pool = fb.Pool(config(pool_size=3, min_idle=3, max_waiters=16))
     with pool:

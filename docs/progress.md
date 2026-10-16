@@ -1,5 +1,35 @@
 # Evidência de implementação
 
+## Security and release update 0.2.1 — 2026-10-16 (local, unpublished)
+
+- Restored `max_result_bytes` with a 512 MiB default, explicit `None`, checked
+  accounting for rows, JSON, Arrow/Polars and Pydantic inputs, and no cumulative
+  quota on streams. Cleanup and pool reuse after limit failures passed against
+  the disposable Firebird fixture.
+- Updated PyO3, `pyo3-async-runtimes` and `time`; shared credentials through a
+  zeroizing Rust buffer and zeroized the temporary native attach buffer. The
+  pinned `cargo-audit 0.22.2` scanned 123 dependencies with no advisory.
+- Local macOS arm64 / CPython 3.14 validation passed: **264 Python integration
+  tests**, **31 live Rust/C++ tests**, **26 packaging tests**, and **25 model
+  tests** with 2 SDK-only skips. Workspace tests, Clippy with warnings denied,
+  Rustfmt, Ruff, Mypy, module boundaries, actionlint, fuzz-target compilation,
+  vendor inventory, release guards, sdist build, and `twine check` also passed.
+- Rebuilt wheel `fbfast-0.2.1-cp314-cp314-macosx_11_0_arm64.whl`; verified build
+  ID `8dce4228de94097a191a84ed490544cb5044114b3486f69baa8a0d90f0c9c093`.
+  The installed wheel passed the same smoke, including a named time zone and DST
+  fold, against disposable Firebird 5.0.3 and 5.0.4 servers.
+- A wheel with the Firebird 5.0.4 client failed the named-time-zone contract
+  against a 5.0.3 server. The release therefore keeps the 5.0.3 client and tests
+  it against both server versions. This is local compatibility evidence, not
+  homologation against an operational database.
+- Added RustSec, Linux ASan/UBSan, and deterministic fuzz gates to CI. The fuzz
+  harnesses compile locally; the sanitizer flags could not link the Apple
+  runtime, so sanitizer execution remains pending on the Linux CI job together
+  with the complete 20-wheel matrix.
+- Added the resumable `./scripts/release.py` flow and validated it with release
+  guard tests and a dry run. No commit, push, tag, PyPI upload, or GitHub Release
+  was created during this local validation.
+
 ## Typed results and documentation — 2026-10-16 (local, unpublished)
 
 - Added optional Pydantic v2 `model=` for materialized row queries, sync/async,

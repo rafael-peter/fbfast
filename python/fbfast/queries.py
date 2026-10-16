@@ -21,7 +21,7 @@ class Queries(RowQueries):
 
         No Python Arrow extra is required. Schema is available after entering.
         batch_rows defaults to fetch_size; batch_bytes bounds native batches.
-        max_result_rows applies to materialized fetches, not this stream.
+        Materialized row/byte limits do not apply to this stream.
         """
         return ArrowStream(self._executor, sql, params, batch_rows, False, self._timeout(timeout), arrow=True)
 
@@ -35,7 +35,8 @@ class Queries(RowQueries):
         """Build a complete pyarrow.Table natively; requires the arrow extra.
 
         Preserves SQL types and metadata, including full INT128 as Decimal256.
-        Uses max_result_rows. No Python tuples or dictionaries are built per row.
+        Uses max_result_rows and max_result_bytes. No Python tuples or dictionaries
+        are built per row.
         """
         return self._executor.arrow(sql, params, timeout=self._timeout(timeout))
 
@@ -87,7 +88,7 @@ class Queries(RowQueries):
         json_non_finite: JsonNonFinite = "error",
         timeout: float | None | _DefaultTimeout = _DEFAULT,
     ) -> bytes:
-        """Async fetch_json with the same native writer, precision and row limit."""
+        """Async fetch_json with the same native writer, precision and result limits."""
         return cast(bytes, await self._executor.json(sql, params, options=(orient, json_integers,
                     json_decimals, json_binary, json_non_finite), timeout=self._timeout(timeout),
                     asynchronous=True))

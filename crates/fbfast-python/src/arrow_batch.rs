@@ -64,8 +64,8 @@ impl Batch {
         let schema = FFI_ArrowSchema::try_from(self.batch.schema().as_ref())
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok((
-            PyCapsule::new(py, schema, Some(c"arrow_schema".into()))?,
-            PyCapsule::new(py, array, Some(c"arrow_array".into()))?,
+            PyCapsule::new_with_value(py, schema, c"arrow_schema")?,
+            PyCapsule::new_with_value(py, array, c"arrow_array")?,
         ))
     }
 }
@@ -85,7 +85,7 @@ impl Schema {
     fn __arrow_c_schema__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyCapsule>> {
         let schema = FFI_ArrowSchema::try_from(self.schema.as_ref())
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        PyCapsule::new(py, schema, Some(c"arrow_schema".into()))
+        PyCapsule::new_with_value(py, schema, c"arrow_schema")
     }
 }
 pub fn convert(py: Python<'_>, batch: &RecordBatch) -> PyResult<Py<PyAny>> {

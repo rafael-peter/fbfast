@@ -42,7 +42,7 @@ from .api import (
     fetch_val, fetch_val_async, stream, stream_async,
 )
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 __all__ = [
     "ArrowBatch", "ArrowSchema", "ArrowStream", "AsyncArrowStream", "stream_arrow", "stream_arrow_async",
     "__version__",

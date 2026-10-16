@@ -1,5 +1,7 @@
 """Release failures must happen before publication or mutation of a system SDK."""
 from pathlib import Path
+import importlib.util
+import json
 import os
 import subprocess
 import sys
@@ -9,6 +11,11 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
 from ci_fixture import fixture  # noqa: E402
+
+SPEC = importlib.util.spec_from_file_location("fbfast_release", ROOT / "scripts/release.py")
+assert SPEC is not None and SPEC.loader is not None
+release = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(release)
 
 
 def test_mismatched_tag_is_rejected():
@@ -34,3 +41,31 @@ def test_smoke_fixture_refuses_unowned_sdk_before_touching_configuration(tmp_pat
         with fixture(tmp_path, tmp_path / "database"):
             pytest.fail("Fixture accepted an unmarked SDK")
     assert config.read_text() == "Original system configuration\n"
+
+
+def test_release_title_comes_from_version_notes(tmp_path):
+    notes = tmp_path / "notes.md"
+    notes.write_text("# fbfast 1.2.3 — Concrete change\n\nDetails.\n")
+    assert release.release_title(notes, "1.2.3") == "1.2.3 — Concrete change"
+
+
+def test_release_workflow_lookup_requires_exact_commit_and_branch(monkeypatch):
+    runs = [
+        dict(databaseId=1, status="completed", conclusion="success", headBranch="main",
+             headSha="other", createdAt="2026-01-03T00:00:00Z"),
+        dict(databaseId=2, status="completed", conclusion="failure", headBranch="other",
+             headSha="wanted", createdAt="2026-01-02T00:00:00Z"),
+        dict(databaseId=3, status="completed", conclusion="success", headBranch="main",
+             headSha="wanted", createdAt="2026-01-01T00:00:00Z"),
+    ]
+    monkeypatch.setattr(release, "output", lambda *args: json.dumps(runs))
+    assert release.workflow_run("build-wheels.yml", "wanted", "main")["databaseId"] == 3
+
+
+def test_remote_annotated_tag_resolves_to_peeled_commit(monkeypatch):
+    monkeypatch.setattr(
+        release,
+        "output",
+        lambda *args: "tag-object\trefs/tags/v1.2.3\ncommit\trefs/tags/v1.2.3^{}",
+    )
+    assert release.remote_tag_commit("v1.2.3") == "commit"

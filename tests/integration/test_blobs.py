@@ -107,6 +107,14 @@ def test_blob_limit_is_per_cell_after_transliteration_and_bind_never_creates_blo
         assert pool.fetch_val("SELECT 2 FROM RDB$DATABASE") == 2
 
 
+def test_blob_also_counts_toward_materialized_result_budget(fb, config):
+    with fb.Pool(config(pool_size=1, max_blob_bytes=2048, max_result_bytes=100)) as pool:
+        with pytest.raises(fb.ResultLimitError, match="max_result_bytes"):
+            pool.fetch_val("SELECT BINARY_VALUE FROM FBFAST_BLOBS WHERE ID=1023")
+        assert pool.fetch_all("SELECT ID FROM FBFAST_TYPES WHERE 1=0") == []
+        assert pool.stats()["idle"] == 1
+
+
 def test_blob_async_cancellation_deadline_and_heartbeat(fb, config, record_property):
     sql = "SELECT TEXT_VALUE, BINARY_VALUE FROM FBFAST_BLOBS WHERE ID=1048577"
 
