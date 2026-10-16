@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import ctypes
 import hashlib
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 SYSTEM_PREFIXES = ("/usr/lib/", "/System/Library/")
@@ -26,13 +26,21 @@ def dependencies(path: Path) -> list[str]:
 
 
 def client_version(path: Path) -> str:
-    client = ctypes.CDLL(str(path))
-    function = client.isc_get_client_version
-    function.argtypes = [ctypes.c_char_p]
-    function.restype = None
-    buffer = ctypes.create_string_buffer(256)
-    function(buffer)
-    return buffer.value.decode("ascii")
+    # A loaded DLL cannot be deleted on Windows. Keep the version probe in a
+    # short-lived process so the build can clean up its staging directory.
+    probe = """
+import ctypes, sys
+client = ctypes.CDLL(sys.argv[1])
+function = client.isc_get_client_version
+function.argtypes = [ctypes.c_char_p]
+function.restype = None
+buffer = ctypes.create_string_buffer(256)
+function(buffer)
+print(buffer.value.decode("ascii"))
+"""
+    return subprocess.check_output(
+        [sys.executable, "-I", "-c", probe, str(path)], encoding="ascii", timeout=30,
+    ).strip()
 
 
 def resources(root: Path) -> Path:

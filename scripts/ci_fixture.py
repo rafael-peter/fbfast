@@ -49,7 +49,7 @@ def fixture(sdk: Path, directory: Path):
             "GRANT FBFAST_CI_ROLE TO FBFAST_CI;\nCOMMIT;\n"
         )
         result = subprocess.run([str(binary / f"isql{suffix}"), "-bail", "-q", "-ch", "UTF8"],
-                                input=source, env=env, capture_output=True, text=True, timeout=45)
+                                input=source, env=env, capture_output=True, encoding="utf-8", timeout=45)
         if result.returncode:
             detail = (result.stdout + result.stderr).replace(password, "<redacted>")
             raise RuntimeError(f"Disposable SDK fixture initialization failed: {detail}")
