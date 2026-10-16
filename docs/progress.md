@@ -1,6 +1,6 @@
 # Evidência de implementação
 
-## Security and release update 0.2.1 — 2026-10-16 (local, unpublished)
+## Security and release update 0.2.1 — 2026-10-16 (published)
 
 - Restored `max_result_bytes` with a 512 MiB default, explicit `None`, checked
   accounting for rows, JSON, Arrow/Polars and Pydantic inputs, and no cumulative
@@ -29,6 +29,16 @@
   `787a3da`. Its first CI run exposed missing sanitizer runtime linkage and the
   absent Windows `tzdata` dependency before any tag, PyPI upload, or GitHub
   Release was created; this follow-up corrects both failures.
+- Corrective commit `6ad5de5` passed all 23 jobs in
+  [build run 38956537235](https://github.com/rafael-peter/fbfast/actions/runs/38956537235).
+  Tag `v0.2.1` points to that commit; the
+  [release workflow 38957463936](https://github.com/rafael-peter/fbfast/actions/runs/38957463936)
+  rebuilt and verified the matrix before its OIDC upload completed successfully.
+- [PyPI 0.2.1](https://pypi.org/project/fbfast/0.2.1/) contains 20 wheels and one
+  sdist with no yanked files. A clean macOS arm64 / CPython 3.14 environment
+  installed the published wheel from PyPI and loaded its embedded 5.0.3 client.
+  The [GitHub Release](https://github.com/rafael-peter/fbfast/releases/tag/v0.2.1)
+  is published with the prepared notes.
 
 ## Typed results and documentation — 2026-10-16 (local, unpublished)
 

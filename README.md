@@ -26,8 +26,8 @@ with Pool(FirebirdConfig()) as pool:
         print(order.ID, order.CUSTOMER)
 ```
 
-> The `model=` API was introduced in 0.2.0. This checkout prepares the 0.2.1
-> security update; publication is not yet confirmed.
+> The `model=` API was introduced in 0.2.0. The 0.2.1 security update is
+> available from [PyPI](https://pypi.org/project/fbfast/0.2.1/).
 
 ## Why fbfast?
 
