@@ -14,11 +14,32 @@ Entrega de distribuição em andamento:
   aarch64/x86_64, Windows x86_64; CPython 3.11–3.14 com GIL), mais sdist.
 - `.github/workflows/release.yml`: tag deve coincidir com versão; todos os builds
   e smokes devem passar; gate confere matriz completa e hashes antes de PyPI OIDC.
-- `actionlint 1.7.12` passou. Nenhum workflow remoto, commit/push, tag ou upload
-  foi executado. Trusted Publisher da conta ainda precisa ser configurado.
+- `actionlint 1.7.12` passou. Em 16/10/2026 o autor commitou e enviou `c10f0f9`,
+  iniciando o CI. A execução revelou conflitos de ferramentas Rust, linker do
+  Git Bash e duas diferenças Windows (include C++ e limpeza de DLL carregada).
+  As correções foram enviadas em `4ca8855`, `4c0c9c9` e `80094bf`; a rodada
+  [38912311995](https://github.com/rafael-peter/fbfast/actions/runs/38912311995)
+  concluiu com **21 jobs aprovados, zero falhas** em `80094bf`: os 20 wheels e
+  o sdist. Cada wheel passou por inventário/relocação, instalação e consultas
+  reais no servidor descartável, incluindo Windows e variantes Intel. Os jobs
+  CPython 3.14 também executaram os testes Rust unitários/propriedades. A etapa
+  Linux aarch64/3.11 demorou na instalação de ferramentas, mas terminou com
+  sucesso na mesma tentativa. Nenhuma tag ou publicação PyPI foi criada.
+- Os 21 artefatos desse run foram baixados em `dist/ci-38912311995/` e reunidos
+  em `dist/release-38912311995/`. `check_release.py --artifacts` passou com
+  `GITHUB_REF_TYPE=tag` e `GITHUB_REF_NAME=v0.1.0`: matriz completa, versão e
+  hashes conferidos. `twine check` passou nos 20 wheels e no sdist. A revisão
+  posterior só atualiza README/registro de evidências; seu sdist também passou
+  no `twine check`. O workflow de release recompila e confere a tag antes do upload.
+- O autor confirmou por imagem o pending Trusted Publisher com projeto `fbfast`,
+  repositório `rafael-peter/fbfast`, workflow `release.yml` e environment `pypi`.
+  O cadastro coincide com o workflow; ativação depende do primeiro upload.
 - O environment `pypi` foi criado e consultado pela API GitHub em
   `rafael-peter/fbfast`, sem regras opcionais de proteção. Isso prepara o destino
   do job de publicação; não configura o Trusted Publisher na conta PyPI.
+
+Evidências locais anteriores ao CI completo acima:
+
 - Wheel final desta revisão em macOS arm64/CPython 3.14, build
   `2a3b6ed4de16f11c877af34ec279d832596b03db461bf8456f541e8989c3e2f6`,
   passou por inventário/relocação, 22 testes de empacotamento/config/guards e smoke
@@ -38,8 +59,8 @@ Entrega de distribuição em andamento:
   `1c25d36de7d3cd3cfea17c192be771277030f7120d0c03b1db9388e8b51729f1`,
   compilou e passou por auditwheel manylinux 2.28, inventário/relocação, instalação
   e smoke real (escalares, timezone/ICU, JSON, Arrow/Polars, streams sync/async e
-  TPB efetivo). Log `.tools/linux-release-final.log`. Windows e variantes x86_64 aguardam
-  execução de seus próprios jobs; não estão sendo chamados de homologados.
+  TPB efetivo). Log `.tools/linux-release-final.log`. Nessa etapa local, Windows e
+  variantes x86_64 ainda aguardavam a execução de seus próprios jobs.
 - Linux aarch64/CPython 3.11, 3.12 e 3.13 também passaram pelo build release,
   auditwheel manylinux 2.28, inventário/relocação, instalação pip e smoke CI real.
   Build IDs, respectivamente:

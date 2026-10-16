@@ -5,8 +5,8 @@ Oferece pool, consultas sync/async, snapshots, streaming e saídas em linhas,
 JSON, Arrow e Polars. A entrega atual está focada na distribuição dessa API;
 extração paralela e outras evoluções do plano ficam para versões posteriores.
 
-Wheels testados localmente em **macOS arm64 e Linux aarch64, CPython 3.14 com GIL**.
-A matriz CI cobre também Intel e Windows, com CPython 3.11–3.14. Consulte
+Matriz de wheels: **macOS arm64/x86_64, Linux aarch64/x86_64 e Windows x86_64**,
+com CPython 3.11–3.14 com GIL. Cada alvo tem build e consulta real no CI. Consulte
 [evidências e limites de validação](docs/progress.md).
 
 ## Instalar com uv
@@ -14,6 +14,16 @@ A matriz CI cobre também Intel e Windows, com CPython 3.11–3.14. Consulte
 A distribuição principal passa a ser um pacote versionado, com fontes e tags
 no Git. Um wheel pronto dispensa Rust, C++ e instalação local do Firebird no
 consumidor. Ainda requer um servidor Firebird acessível para executar consultas.
+
+Para versões publicadas no PyPI:
+
+```sh
+uv add fbfast
+# Ou, em um ambiente gerenciado com pip:
+pip install fbfast
+```
+
+Também é possível instalar um wheel baixado dos artefatos do GitHub Actions:
 
 ```sh
 uv add /caminho/para/fbfast-0.1.0-cp314-cp314-macosx_11_0_arm64.whl
@@ -35,8 +45,8 @@ pip install "fbfast @ git+https://github.com/rafael-peter/fbfast.git@COMMIT"
 
 Fixar um commit ou uma tag evita atualizar a biblioteca implicitamente a cada
 instalação. A publicação PyPI é automatizada por tag `v<versão>` após os testes
-dos wheels e a configuração do Trusted Publisher. O workflow ainda precisa ser
-executado no GitHub; não há versão PyPI publicada confirmada nesta entrega.
+dos wheels e a configuração do Trusted Publisher. Os resultados do CI e o
+estado de publicação estão registrados em [docs/progress.md](docs/progress.md).
 Veja o [guia de release e configuração PyPI](docs/releasing.md).
 
 O backend PEP 517 inclui extensão, runtime, manifesto e licenças no mesmo wheel;

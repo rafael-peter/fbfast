@@ -67,6 +67,7 @@ O job `publish` tem `id-token: write`, usa OIDC e gera atestações. Nenhum secr
 4. Conferir o job `publish` e a página do projeto no PyPI. Só a partir daí a versão
    pode ser considerada publicada e instalada de lá.
 
-Não houve commit/push, criação de tag ou upload PyPI pelo agente. Workflows locais
-e smoke local não comprovam jobs remotos nem publicação. O estado de validação
-por plataforma é registrado em `progress.md`.
+O autor confirmou o cadastro do pending publisher em 16/10/2026. Esse estado
+é esperado antes da primeira publicação: o primeiro upload cria o projeto e
+converte o cadastro em publisher ativo. Não é uma aprovação manual pendente.
+O estado de validação por plataforma e publicação é registrado em `progress.md`.
