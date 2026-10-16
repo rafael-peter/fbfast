@@ -8,7 +8,26 @@ preserva o histórico e incorpora os ajustes expressamente pedidos pelo usuário
 distribuição uv/pip, remoção do limite total de bytes e foco atual em release,
 documentados nas decisões 0004, 0009 e 0018.
 
-Entrega de distribuição em andamento:
+Entrega de distribuição concluída em 16/10/2026:
+
+- A tag `v0.1.0` aponta para `06da0cd9de0125a087b99c04731417088fab399b`.
+  O workflow de release
+  [38915993858](https://github.com/rafael-peter/fbfast/actions/runs/38915993858)
+  terminou com **22 jobs aprovados, zero falhas**: 20 wheels, sdist e publicação.
+- [PyPI 0.1.0](https://pypi.org/project/fbfast/0.1.0/): API pública confirmou
+  os 20 wheels e um sdist, sem arquivos yanked. O upload via Trusted Publishing
+  terminou em 16/10/2026 às 14:39 UTC, após `check_release.py` e `twine check`.
+- [GitHub Release v0.1.0](https://github.com/rafael-peter/fbfast/releases/tag/v0.1.0)
+  publicada, com notas, instalação e link para os wheels no PyPI.
+- Consumidor isolado neste macOS arm64/CPython 3.14.5 instalou `fbfast==0.1.0`
+  diretamente de `https://pypi.org/simple`, usando `uv`, sem cache e exigindo
+  wheel. O smoke real passou com cliente embarcado, Unicode, Decimal, NULL,
+  timezone/ICU, JSON, Arrow/Polars, streams sync/async e transação read-only.
+  Build ID: `749146ffd627d173ed1f5fd86850303acc8b6e89e136230adbce76ae321d75ef`.
+  Evidências locais: `.tools/pypi-v0.1.0.json`, `.tools/publish-v0.1.0.log`
+  e `.tools/pypi-consumer-smoke.log`.
+
+Preparação e validação anteriores à publicação:
 
 - `.github/workflows/build-wheels.yml`: 20 wheels (macOS arm64/x86_64, Linux
   aarch64/x86_64, Windows x86_64; CPython 3.11–3.14 com GIL), mais sdist.
@@ -24,7 +43,7 @@ Entrega de distribuição em andamento:
   reais no servidor descartável, incluindo Windows e variantes Intel. Os jobs
   CPython 3.14 também executaram os testes Rust unitários/propriedades. A etapa
   Linux aarch64/3.11 demorou na instalação de ferramentas, mas terminou com
-  sucesso na mesma tentativa. Nenhuma tag ou publicação PyPI foi criada.
+  sucesso na mesma tentativa. Nessa rodada, ainda não havia tag ou publicação PyPI.
 - Os 21 artefatos desse run foram baixados em `dist/ci-38912311995/` e reunidos
   em `dist/release-38912311995/`. `check_release.py --artifacts` passou com
   `GITHUB_REF_TYPE=tag` e `GITHUB_REF_NAME=v0.1.0`: matriz completa, versão e
@@ -54,7 +73,7 @@ Evidências locais anteriores ao CI completo acima:
   `df1850ce4b0d1a9c133d39d385bebf32d07821e12f166ed8a37c3b6abb44acc4`.
   Logs `.tools/macos-cp311.log`, `.tools/macos-cp312.log` e
   `.tools/macos-cp313.log`. Isso completa a matriz local macOS arm64 3.11–3.14;
-  execução remota dos workflows continua pendente.
+  naquela etapa, a execução remota dos workflows ainda estava pendente.
 - Wheel final desta revisão em Linux aarch64/CPython 3.14, build
   `1c25d36de7d3cd3cfea17c192be771277030f7120d0c03b1db9388e8b51729f1`,
   compilou e passou por auditwheel manylinux 2.28, inventário/relocação, instalação
@@ -80,7 +99,7 @@ Evidências locais anteriores ao CI completo acima:
   coletado com sucesso, sem alegar que isso equivale a executar o binário Windows.
   `twine check` passou nos dois wheels e no sdist. Consulta ao PyPI retornou 404
   para `fbfast`; não havia projeto publicado na data da verificação. Cadastro
-  de pending Trusted Publisher segue como ação da conta do autor.
+  de pending Trusted Publisher ainda aguardava confirmação naquela etapa.
 
 A rodada comparativa já iniciada terminou com **180 amostras válidas/zero erros**:
 `benchmarks/results/20261015T175028Z-comparison/`. Há fontes congelados, manifesto,

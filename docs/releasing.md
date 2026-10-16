@@ -66,8 +66,15 @@ O job `publish` tem `id-token: write`, usa OIDC e gera atestações. Nenhum secr
    testa a matriz inteira e publica os artefatos dessa tag.
 4. Conferir o job `publish` e a página do projeto no PyPI. Só a partir daí a versão
    pode ser considerada publicada e instalada de lá.
+5. Criar a GitHub Release usando a tag existente, com notas e link para o PyPI.
+   O workflow atual publica no PyPI; a criação da página em Releases é uma etapa
+   separada. Não mover uma tag de versão já publicada.
 
 O autor confirmou o cadastro do pending publisher em 16/10/2026. Esse estado
 é esperado antes da primeira publicação: o primeiro upload cria o projeto e
 converte o cadastro em publisher ativo. Não é uma aprovação manual pendente.
 O estado de validação por plataforma e publicação é registrado em `progress.md`.
+
+A primeira publicação foi concluída em 16/10/2026:
+[PyPI 0.1.0](https://pypi.org/project/fbfast/0.1.0/) e
+[GitHub Release v0.1.0](https://github.com/rafael-peter/fbfast/releases/tag/v0.1.0).
