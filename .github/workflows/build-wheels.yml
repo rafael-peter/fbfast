@@ -10,6 +10,10 @@ on:
 permissions:
   contents: read
 
+env:
+  # Use the installed build toolchain without adding local development components.
+  RUSTUP_TOOLCHAIN: '1.91.1'
+
 jobs:
   desktop:
     name: ${{ matrix.runner }} / Python ${{ matrix.python }}
@@ -30,6 +34,14 @@ jobs:
           python-version: ${{ matrix.python }}
       - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
         if: runner.os == 'Windows'
+      - name: Select MSVC linker instead of Git Bash link.exe
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $compiler = (Get-Command cl.exe -ErrorAction Stop).Source
+          $linker = Join-Path (Split-Path $compiler) 'link.exe'
+          if (!(Test-Path $linker)) { throw "MSVC linker not found: $linker" }
+          "CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER=$linker" >> $env:GITHUB_ENV
       - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable action
         with:
           toolchain: '1.91.1'
