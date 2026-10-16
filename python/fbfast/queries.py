@@ -2,30 +2,18 @@
 from __future__ import annotations
 
 from typing import Any, TYPE_CHECKING, cast
+from .row_queries import RowQueries, _DEFAULT, _DefaultTimeout
 from .analytics import Unsupported, _mode
 if TYPE_CHECKING:
     import pyarrow as pa  # type: ignore[import-untyped]
     import polars as pl
-from ._native import FirebirdConfig, _Pool
 from .stream import AsyncStream, Stream, ArrowStream, AsyncArrowStream
 from .stream import AsyncJsonStream, JsonStream
 from .json_options import JsonBinary, JsonDecimals, JsonFormat, JsonIntegers, JsonNonFinite, JsonOrient
 
-class _DefaultTimeout:
-    pass
 
-_DEFAULT = _DefaultTimeout()
-
-class Queries:
+class Queries(RowQueries):
     __slots__ = ()
-    _config: FirebirdConfig
-
-    @property
-    def _executor(self) -> _Pool:
-        raise NotImplementedError
-
-    def _timeout(self, value: float | None | _DefaultTimeout) -> float | None:
-        return self._config.query_timeout if isinstance(value, _DefaultTimeout) else value
 
     def stream_arrow(self, sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
                      batch_rows: int | None = None, timeout: float | None | _DefaultTimeout = _DEFAULT) -> ArrowStream:
@@ -134,20 +122,6 @@ class Queries:
                                ((orient, json_integers, json_decimals, json_binary, json_non_finite), format))
 
 
-    def fetch_all(
-        self, sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
-        as_dict: bool = False, timeout: float | None | _DefaultTimeout = _DEFAULT,
-    ) -> list[tuple[Any, ...]] | list[dict[str, Any]]:
-        return cast(list[tuple[Any, ...]] | list[dict[str, Any]], self._executor.rows(sql, params, as_dict=as_dict, timeout=self._timeout(timeout)))
-
-
-    def fetch_one(
-        self, sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
-        as_dict: bool = False, timeout: float | None | _DefaultTimeout = _DEFAULT,
-    ) -> tuple[Any, ...] | dict[str, Any] | None:
-        return cast(tuple[Any, ...] | dict[str, Any] | None, self._executor.rows(sql, params, first=True, as_dict=as_dict, timeout=self._timeout(timeout)))
-
-
     def fetch_val(
         self, sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
         timeout: float | None | _DefaultTimeout = _DEFAULT,
@@ -172,22 +146,6 @@ class Queries:
                      batch_rows: int | None = None, as_dict: bool = False,
                      timeout: float | None | _DefaultTimeout = _DEFAULT) -> AsyncStream:
         return AsyncStream(self._executor, sql, params, batch_rows, as_dict, self._timeout(timeout))
-
-
-    async def fetch_all_async(
-        self, sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
-        as_dict: bool = False, timeout: float | None | _DefaultTimeout = _DEFAULT,
-    ) -> list[tuple[Any, ...]] | list[dict[str, Any]]:
-        return cast(list[tuple[Any, ...]] | list[dict[str, Any]],
-                    await self._executor.rows_async(sql, params, as_dict=as_dict, timeout=self._timeout(timeout)))
-
-
-    async def fetch_one_async(
-        self, sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
-        as_dict: bool = False, timeout: float | None | _DefaultTimeout = _DEFAULT,
-    ) -> tuple[Any, ...] | dict[str, Any] | None:
-        return cast(tuple[Any, ...] | dict[str, Any] | None,
-                    await self._executor.rows_async(sql, params, first=True, as_dict=as_dict, timeout=self._timeout(timeout)))
 
 
     async def fetch_val_async(

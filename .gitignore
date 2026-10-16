@@ -15,3 +15,6 @@ python/fbfast/_licenses/
 python/fbfast/_build_info.json
 *.fdb
 
+.DS_Store
+
+.DS_Store

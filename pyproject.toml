@@ -5,12 +5,13 @@ backend-path = ["."]
 
 [project]
 name = "fbfast"
-version = "0.1.0"
+version = "0.2.0"
 description = "Read-only Firebird 5 client with a Rust execution core"
 requires-python = ">=3.11,<3.15"
 readme = "README.md"
 
 [project.optional-dependencies]
+pydantic = ["pydantic>=2,<3"]
 arrow = ["pyarrow>=26"]
 polars = ["polars>=2"]
 

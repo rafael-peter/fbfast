@@ -6,7 +6,8 @@ from types import TracebackType
 
 from ._bootstrap import _CLIENT_PATH
 from ._native import FirebirdConfig, _Pool
-from .queries import Queries, _DefaultTimeout, _DEFAULT
+from .queries import Queries
+from .row_queries import _DefaultTimeout, _DEFAULT
 from .snapshot import Snapshot
 
 

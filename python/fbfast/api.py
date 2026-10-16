@@ -1,7 +1,8 @@
 """Typed module-level delegates; names resolve to the existing Pool instance."""
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal, overload
+from .row_queries import ModelT
 
 from .analytics import Unsupported
 
@@ -9,7 +10,7 @@ if TYPE_CHECKING:
     import pyarrow as pa  # type: ignore[import-untyped]
     import polars as pl
 
-from .queries import _DEFAULT, _DefaultTimeout
+from .row_queries import _DEFAULT, _DefaultTimeout
 from .registry import get_pool
 from .stream import AsyncStream, Stream, ArrowStream, AsyncArrowStream
 from .stream import AsyncJsonStream, JsonStream
@@ -112,21 +113,83 @@ def stream_json_async(
                                             json_non_finite=json_non_finite, timeout=timeout)
 
 
+@overload
 def fetch_all(
     sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
-    pool: str = "default", as_dict: bool = False,
+    pool: str = "default", model: type[ModelT], as_dict: bool = False,
     timeout: float | None | _DefaultTimeout = _DEFAULT,
-) -> list[tuple[Any, ...]] | list[dict[str, Any]]:
+) -> list[ModelT]: ...
+
+@overload
+def fetch_all(
+    sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
+    pool: str = "default", model: None = None, as_dict: Literal[False] = False,
+    timeout: float | None | _DefaultTimeout = _DEFAULT,
+) -> list[tuple[Any, ...]]: ...
+
+@overload
+def fetch_all(
+    sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
+    pool: str = "default", model: None = None, as_dict: Literal[True],
+    timeout: float | None | _DefaultTimeout = _DEFAULT,
+) -> list[dict[str, Any]]: ...
+
+@overload
+def fetch_all(
+    sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
+    pool: str = "default", model: None = None, as_dict: bool,
+    timeout: float | None | _DefaultTimeout = _DEFAULT,
+) -> list[tuple[Any, ...]] | list[dict[str, Any]]: ...
+
+def fetch_all(
+    sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
+    pool: str = "default", as_dict: bool = False, model: type[ModelT] | None = None,
+    timeout: float | None | _DefaultTimeout = _DEFAULT,
+) -> list[tuple[Any, ...]] | list[dict[str, Any]] | list[ModelT]:
     """Fetch rows from a named pool; omitted timeout uses its query_timeout."""
+    if model is not None:
+        return get_pool(pool).fetch_all(sql, params, as_dict=as_dict, model=model, timeout=timeout)
+
     return get_pool(pool).fetch_all(sql, params, as_dict=as_dict, timeout=timeout)
 
 
+@overload
 def fetch_one(
     sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
-    pool: str = "default", as_dict: bool = False,
+    pool: str = "default", model: type[ModelT], as_dict: bool = False,
     timeout: float | None | _DefaultTimeout = _DEFAULT,
-) -> tuple[Any, ...] | dict[str, Any] | None:
+) -> ModelT | None: ...
+
+@overload
+def fetch_one(
+    sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
+    pool: str = "default", model: None = None, as_dict: Literal[False] = False,
+    timeout: float | None | _DefaultTimeout = _DEFAULT,
+) -> tuple[Any, ...] | None: ...
+
+@overload
+def fetch_one(
+    sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
+    pool: str = "default", model: None = None, as_dict: Literal[True],
+    timeout: float | None | _DefaultTimeout = _DEFAULT,
+) -> dict[str, Any] | None: ...
+
+@overload
+def fetch_one(
+    sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
+    pool: str = "default", model: None = None, as_dict: bool,
+    timeout: float | None | _DefaultTimeout = _DEFAULT,
+) -> tuple[Any, ...] | dict[str, Any] | None: ...
+
+def fetch_one(
+    sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
+    pool: str = "default", as_dict: bool = False, model: type[ModelT] | None = None,
+    timeout: float | None | _DefaultTimeout = _DEFAULT,
+) -> tuple[Any, ...] | dict[str, Any] | ModelT | None:
     """Fetch the first row or None from a named pool."""
+    if model is not None:
+        return get_pool(pool).fetch_one(sql, params, as_dict=as_dict, model=model, timeout=timeout)
+
     return get_pool(pool).fetch_one(sql, params, as_dict=as_dict, timeout=timeout)
 
 
@@ -166,21 +229,83 @@ def stream_async(
                                        timeout=timeout)
 
 
+@overload
 async def fetch_all_async(
     sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
-    pool: str = "default", as_dict: bool = False,
+    pool: str = "default", model: type[ModelT], as_dict: bool = False,
     timeout: float | None | _DefaultTimeout = _DEFAULT,
-) -> list[tuple[Any, ...]] | list[dict[str, Any]]:
+) -> list[ModelT]: ...
+
+@overload
+async def fetch_all_async(
+    sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
+    pool: str = "default", model: None = None, as_dict: Literal[False] = False,
+    timeout: float | None | _DefaultTimeout = _DEFAULT,
+) -> list[tuple[Any, ...]]: ...
+
+@overload
+async def fetch_all_async(
+    sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
+    pool: str = "default", model: None = None, as_dict: Literal[True],
+    timeout: float | None | _DefaultTimeout = _DEFAULT,
+) -> list[dict[str, Any]]: ...
+
+@overload
+async def fetch_all_async(
+    sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
+    pool: str = "default", model: None = None, as_dict: bool,
+    timeout: float | None | _DefaultTimeout = _DEFAULT,
+) -> list[tuple[Any, ...]] | list[dict[str, Any]]: ...
+
+async def fetch_all_async(
+    sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
+    pool: str = "default", as_dict: bool = False, model: type[ModelT] | None = None,
+    timeout: float | None | _DefaultTimeout = _DEFAULT,
+) -> list[tuple[Any, ...]] | list[dict[str, Any]] | list[ModelT]:
     """Fetch rows asynchronously using the named pool's scheduler and limits."""
+    if model is not None:
+        return await get_pool(pool).fetch_all_async(sql, params, as_dict=as_dict, model=model, timeout=timeout)
+
     return await get_pool(pool).fetch_all_async(sql, params, as_dict=as_dict, timeout=timeout)
 
 
+@overload
 async def fetch_one_async(
     sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
-    pool: str = "default", as_dict: bool = False,
+    pool: str = "default", model: type[ModelT], as_dict: bool = False,
     timeout: float | None | _DefaultTimeout = _DEFAULT,
-) -> tuple[Any, ...] | dict[str, Any] | None:
+) -> ModelT | None: ...
+
+@overload
+async def fetch_one_async(
+    sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
+    pool: str = "default", model: None = None, as_dict: Literal[False] = False,
+    timeout: float | None | _DefaultTimeout = _DEFAULT,
+) -> tuple[Any, ...] | None: ...
+
+@overload
+async def fetch_one_async(
+    sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
+    pool: str = "default", model: None = None, as_dict: Literal[True],
+    timeout: float | None | _DefaultTimeout = _DEFAULT,
+) -> dict[str, Any] | None: ...
+
+@overload
+async def fetch_one_async(
+    sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
+    pool: str = "default", model: None = None, as_dict: bool,
+    timeout: float | None | _DefaultTimeout = _DEFAULT,
+) -> tuple[Any, ...] | dict[str, Any] | None: ...
+
+async def fetch_one_async(
+    sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
+    pool: str = "default", as_dict: bool = False, model: type[ModelT] | None = None,
+    timeout: float | None | _DefaultTimeout = _DEFAULT,
+) -> tuple[Any, ...] | dict[str, Any] | ModelT | None:
     """Fetch the first row or None asynchronously from a named pool."""
+    if model is not None:
+        return await get_pool(pool).fetch_one_async(sql, params, as_dict=as_dict, model=model, timeout=timeout)
+
     return await get_pool(pool).fetch_one_async(sql, params, as_dict=as_dict, timeout=timeout)
 
 

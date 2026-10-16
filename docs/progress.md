@@ -1,5 +1,31 @@
 # Evidência de implementação
 
+## Typed results and documentation — 2026-10-16 (local, unpublished)
+
+- Added optional Pydantic v2 `model=` for materialized row queries, sync/async,
+  snapshots and named-pool helpers. Static overloads infer the concrete model;
+  async validation runs outside the event loop, after native fetching.
+- Local release wheel rebuilt and verified on macOS arm64 / CPython 3.14.
+  Build ID: `a7334008fa6093ae26e65322ad2a7b985ec596698d0a48c9a916ee5fd70f4b10`.
+  Model and packaging checks: **47 passed, 2 SDK checks skipped**. Mypy (library
+  and consumer assertions), Ruff, module boundaries, actionlint, and diff checks
+  passed. These are local checks, not a new published release or remote CI run.
+- Real-server attempts were blocked before connecting: Docker socket access was
+  denied and the private SDK fixture could not bind a loopback port in the
+  sandbox. The new database integration checks have not passed locally. Wheel
+  CI now includes typed-row tests and real Pydantic smoke queries for its matrix.
+- Conversion-only benchmark (`benchmarks/run_models.py`, nine samples per case,
+  prepared dictionaries, CPython 3.14.5 / Pydantic 2.14.1): 100,000 rows had median
+  102.24 ms for manual construction, 111.22 ms for manual `model_validate`, and
+  109.74 ms for `model=`. At 1,000 rows: 0.389 / 0.450 / 0.439 ms respectively.
+  This excludes SQL, network, native decoding and dictionary allocation; it is
+  not an end-to-end performance claim. Raw samples: `.tools/models-benchmark.json`.
+- Rewrote the README in English, moved surviving plan requirements into
+  `docs/roadmap.md`, and removed the superseded root plan (available in Git
+  history). Build storage policy is in `docs/development.md`. `target/` (3.3 GB)
+  and `dist/` (1.9 GB) remain local and ignored; no build artifacts are tracked
+  and none were deleted in this change.
+
 O autor revisou o escopo em 15/10/2026: a API atual atende seu uso e a entrega
 ativa é distribuição por SO e integração PyPI. P5 e a matriz extensa de métricas/
 benchmarks ficam como backlog, conforme `docs/decisions/0018-release-scope.md`.

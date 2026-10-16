@@ -15,6 +15,13 @@ import tempfile
 
 def consumer():
     import fbfast
+    from pydantic import BaseModel
+
+    class ModelRow(BaseModel):
+        ID: int
+        LABEL: str | None
+        AMOUNT: Decimal | None
+
     package = Path(fbfast.__file__).parent.resolve()
     client = fbfast.client_info()
     # samefile handles Windows verbatim paths and filesystem path aliases.
@@ -33,6 +40,12 @@ def consumer():
             raise RuntimeError("Bundled ICU/timezone conversion failed")
         if rows[1] != (2, None, None, None, None):
             raise RuntimeError("NULL representation mismatch")
+        expected_models = [ModelRow(ID=row[0], LABEL=row[1], AMOUNT=row[2]) for row in rows]
+        if pool.fetch_all(sql, model=ModelRow) != expected_models:
+            raise RuntimeError("Pydantic model mismatch")
+        with pool.snapshot() as snapshot:
+            if snapshot.fetch_one(sql, model=ModelRow) != expected_models[0]:
+                raise RuntimeError("Pydantic snapshot mismatch")
         if json.loads(pool.fetch_json("SELECT ID, LABEL FROM WHEEL_SMOKE ORDER BY ID")) != [
             {"ID": 1, "LABEL": "Olá 日本語"}, {"ID": 2, "LABEL": None},
         ]:
@@ -64,6 +77,8 @@ def consumer():
         async with fbfast.Pool(config) as pool:
             if await pool.fetch_all_async(sql) != rows:
                 raise RuntimeError("Async query mismatch")
+            if await pool.fetch_all_async(sql, model=ModelRow) != expected_models:
+                raise RuntimeError("Async Pydantic model mismatch")
             count = 0
             async with pool.stream_arrow_async(sql, batch_rows=1) as stream:
                 async for batch in stream:

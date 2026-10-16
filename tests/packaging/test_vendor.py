@@ -7,17 +7,19 @@ import os
 import shutil
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 from zipfile import ZipFile
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
+VERSION = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["version"]
 
 
 def test_wheel_and_vendor_contain_identical_package() -> None:
     package = ROOT / "dist/vendor/fbfast"
-    wheels = list((ROOT / "dist/wheels").glob("fbfast-*-cp314-cp314-*.whl"))
+    wheels = list((ROOT / "dist/wheels").glob(f"fbfast-{VERSION}-cp314-cp314-*.whl"))
     assert len(wheels) == 1
     with ZipFile(wheels[0]) as archive:
         for path in package.rglob("*"):
@@ -61,7 +63,7 @@ def test_import_and_build_info_do_not_load_client(consumer: Path) -> None:
     shutil.rmtree(consumer / "fbfast/_runtime")
     result = execute(consumer, "import fbfast; print(fbfast.build_info()['version'])")
     assert result.returncode == 0, result.stderr
-    assert result.stdout.strip() == "0.1.0"
+    assert result.stdout.strip() == VERSION
 
 
 @pytest.mark.parametrize("field,value", [("python_version", "3.9"), ("machine", "x86_64")])
