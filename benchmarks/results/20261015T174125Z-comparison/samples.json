@@ -1,0 +1,670 @@
+[
+  {
+    "round": 0,
+    "case": "narrow100",
+    "format": "tuples",
+    "fetch_size": 5000,
+    "adapter": "fbfast",
+    "phase": "measured",
+    "seconds": 0.0022048340033506975,
+    "client_cpu_seconds": 0.00039200000000000346,
+    "process_peak_before_validation_bytes": 32833536,
+    "import_seconds": 0.2383134170086123,
+    "attach_prepare_seconds": 0.4701375409931643,
+    "stages": {
+      "stages": "native pipeline includes cleanup; not instrumented separately"
+    },
+    "build_id": "c1555f90c7d1b5dcb34e19e83ccb174ceb487bf6da3aec2dab2fc4635104a1b1",
+    "correctness": {
+      "phase": "validated",
+      "rows": 100,
+      "sha256": "08d7abaaaa1ec99301fedc9d4957d31ad417882977c23c0b0a26b6cedbf6ef9e"
+    },
+    "sampled_peak_rss_bytes": 32833536,
+    "rss_before_query_bytes": 32768000,
+    "rss_at_result_bytes": 32833536,
+    "rss_sample_count": 2,
+    "rss_interval_seconds": 0.005,
+    "stderr_bytes": 0,
+    "server_cpu_seconds": 0.009125,
+    "server_counter_interval_seconds": 0.03577612499066163,
+    "server_before": {
+      "cpu_usec": 9713497,
+      "memory_current_bytes": 159428608,
+      "memory_lifetime_peak_bytes": 198758400
+    },
+    "server_after": {
+      "cpu_usec": 9722622,
+      "memory_current_bytes": 159301632,
+      "memory_lifetime_peak_bytes": 198758400
+    }
+  },
+  {
+    "round": 0,
+    "case": "narrow100",
+    "format": "tuples",
+    "fetch_size": 5000,
+    "adapter": "firebird-driver",
+    "phase": "measured",
+    "seconds": 0.0017873750039143488,
+    "client_cpu_seconds": 0.000673999999999994,
+    "process_peak_before_validation_bytes": 41123840,
+    "import_seconds": 0.045700999995460734,
+    "attach_prepare_seconds": 0.03377387499494944,
+    "stages": {
+      "execute_seconds": 0.0005833749892190099,
+      "fetch_decode_seconds": 0.0009453330130781978,
+      "cleanup_seconds": 0.00023958399833645672,
+      "conversion_seconds": 1.0082992957904935e-05,
+      "first_batch_seconds": 0.0015248330018948764,
+      "effective_batch_rows": 5000
+    },
+    "build_id": "c1555f90c7d1b5dcb34e19e83ccb174ceb487bf6da3aec2dab2fc4635104a1b1",
+    "correctness": {
+      "phase": "validated",
+      "rows": 100,
+      "sha256": "08d7abaaaa1ec99301fedc9d4957d31ad417882977c23c0b0a26b6cedbf6ef9e"
+    },
+    "sampled_peak_rss_bytes": 41123840,
+    "rss_before_query_bytes": 41123840,
+    "rss_at_result_bytes": 41123840,
+    "rss_sample_count": 2,
+    "rss_interval_seconds": 0.005,
+    "stderr_bytes": 0,
+    "server_cpu_seconds": 0.008353,
+    "server_counter_interval_seconds": 0.03887749998830259,
+    "server_before": {
+      "cpu_usec": 9745631,
+      "memory_current_bytes": 159170560,
+      "memory_lifetime_peak_bytes": 198758400
+    },
+    "server_after": {
+      "cpu_usec": 9753984,
+      "memory_current_bytes": 159125504,
+      "memory_lifetime_peak_bytes": 198758400
+    }
+  },
+  {
+    "round": 0,
+    "case": "narrow100",
+    "format": "tuples",
+    "fetch_size": 5000,
+    "adapter": "firebird-driver-reset",
+    "phase": "measured",
+    "seconds": 0.0021726249979110435,
+    "client_cpu_seconds": 0.0007729999999999959,
+    "process_peak_before_validation_bytes": 40796160,
+    "import_seconds": 0.031506457991781645,
+    "attach_prepare_seconds": 0.031496708004851826,
+    "stages": {
+      "execute_seconds": 0.0006237909983610734,
+      "fetch_decode_seconds": 0.0011354169982951134,
+      "cleanup_seconds": 0.0003968330129282549,
+      "conversion_seconds": 8.791990694589913e-06,
+      "first_batch_seconds": 0.0017570409981999546,
+      "effective_batch_rows": 5000
+    },
+    "build_id": "c1555f90c7d1b5dcb34e19e83ccb174ceb487bf6da3aec2dab2fc4635104a1b1",
+    "correctness": {
+      "phase": "validated",
+      "rows": 100,
+      "sha256": "08d7abaaaa1ec99301fedc9d4957d31ad417882977c23c0b0a26b6cedbf6ef9e"
+    },
+    "sampled_peak_rss_bytes": 40796160,
+    "rss_before_query_bytes": 40796160,
+    "rss_at_result_bytes": 40796160,
+    "rss_sample_count": 2,
+    "rss_interval_seconds": 0.005,
+    "stderr_bytes": 0,
+    "server_cpu_seconds": 0.008909,
+    "server_counter_interval_seconds": 0.036641334008891135,
+    "server_before": {
+      "cpu_usec": 9775437,
+      "memory_current_bytes": 159301632,
+      "memory_lifetime_peak_bytes": 198758400
+    },
+    "server_after": {
+      "cpu_usec": 9784346,
+      "memory_current_bytes": 159068160,
+      "memory_lifetime_peak_bytes": 198758400
+    }
+  },
+  {
+    "round": 0,
+    "case": "narrow100",
+    "format": "dicts",
+    "fetch_size": 5000,
+    "adapter": "fbfast",
+    "phase": "measured",
+    "seconds": 0.0018675839964998886,
+    "client_cpu_seconds": 0.00047799999999999926,
+    "process_peak_before_validation_bytes": 31653888,
+    "import_seconds": 0.005448374999104999,
+    "attach_prepare_seconds": 0.03579991600417998,
+    "stages": {
+      "stages": "native pipeline includes cleanup; not instrumented separately"
+    },
+    "build_id": "c1555f90c7d1b5dcb34e19e83ccb174ceb487bf6da3aec2dab2fc4635104a1b1",
+    "correctness": {
+      "phase": "validated",
+      "rows": 100,
+      "sha256": "08d7abaaaa1ec99301fedc9d4957d31ad417882977c23c0b0a26b6cedbf6ef9e"
+    },
+    "sampled_peak_rss_bytes": 31653888,
+    "rss_before_query_bytes": 31522816,
+    "rss_at_result_bytes": 31653888,
+    "rss_sample_count": 2,
+    "rss_interval_seconds": 0.005,
+    "stderr_bytes": 0,
+    "server_cpu_seconds": 0.008644,
+    "server_counter_interval_seconds": 0.037788625006214716,
+    "server_before": {
+      "cpu_usec": 9809328,
+      "memory_current_bytes": 159481856,
+      "memory_lifetime_peak_bytes": 198758400
+    },
+    "server_after": {
+      "cpu_usec": 9817972,
+      "memory_current_bytes": 159084544,
+      "memory_lifetime_peak_bytes": 198758400
+    }
+  },
+  {
+    "round": 0,
+    "case": "narrow100",
+    "format": "dicts",
+    "fetch_size": 5000,
+    "adapter": "firebird-driver",
+    "phase": "measured",
+    "seconds": 0.0018895420071203262,
+    "client_cpu_seconds": 0.0007769999999999999,
+    "process_peak_before_validation_bytes": 41009152,
+    "import_seconds": 0.03595150000182912,
+    "attach_prepare_seconds": 0.03872145799687132,
+    "stages": {
+      "execute_seconds": 0.0006074589909985662,
+      "fetch_decode_seconds": 0.0009951660031219944,
+      "cleanup_seconds": 0.00023754200083203614,
+      "conversion_seconds": 3.8708007195964456e-05,
+      "first_batch_seconds": 0.0015971249958965927,
+      "effective_batch_rows": 5000
+    },
+    "build_id": "c1555f90c7d1b5dcb34e19e83ccb174ceb487bf6da3aec2dab2fc4635104a1b1",
+    "correctness": {
+      "phase": "validated",
+      "rows": 100,
+      "sha256": "08d7abaaaa1ec99301fedc9d4957d31ad417882977c23c0b0a26b6cedbf6ef9e"
+    },
+    "sampled_peak_rss_bytes": 41009152,
+    "rss_before_query_bytes": 41009152,
+    "rss_at_result_bytes": 41009152,
+    "rss_sample_count": 2,
+    "rss_interval_seconds": 0.005,
+    "stderr_bytes": 0,
+    "server_cpu_seconds": 0.01015,
+    "server_counter_interval_seconds": 0.042340708008850925,
+    "server_before": {
+      "cpu_usec": 9842510,
+      "memory_current_bytes": 159068160,
+      "memory_lifetime_peak_bytes": 198758400
+    },
+    "server_after": {
+      "cpu_usec": 9852660,
+      "memory_current_bytes": 159158272,
+      "memory_lifetime_peak_bytes": 198758400
+    }
+  },
+  {
+    "round": 0,
+    "case": "narrow100",
+    "format": "dicts",
+    "fetch_size": 5000,
+    "adapter": "firebird-driver-reset",
+    "phase": "measured",
+    "seconds": 0.0017747079982655123,
+    "client_cpu_seconds": 0.0006469999999999948,
+    "process_peak_before_validation_bytes": 41107456,
+    "import_seconds": 0.03345108299981803,
+    "attach_prepare_seconds": 0.034721167001407593,
+    "stages": {
+      "execute_seconds": 0.0004820829926757142,
+      "fetch_decode_seconds": 0.0008925000001909211,
+      "cleanup_seconds": 0.0003582089993869886,
+      "conversion_seconds": 3.795800148509443e-05,
+      "first_batch_seconds": 0.0013719999988097697,
+      "effective_batch_rows": 5000
+    },
+    "build_id": "c1555f90c7d1b5dcb34e19e83ccb174ceb487bf6da3aec2dab2fc4635104a1b1",
+    "correctness": {
+      "phase": "validated",
+      "rows": 100,
+      "sha256": "08d7abaaaa1ec99301fedc9d4957d31ad417882977c23c0b0a26b6cedbf6ef9e"
+    },
+    "sampled_peak_rss_bytes": 41107456,
+    "rss_before_query_bytes": 41107456,
+    "rss_at_result_bytes": 41107456,
+    "rss_sample_count": 2,
+    "rss_interval_seconds": 0.005,
+    "stderr_bytes": 0,
+    "server_cpu_seconds": 0.007251,
+    "server_counter_interval_seconds": 0.0338916250038892,
+    "server_before": {
+      "cpu_usec": 9872747,
+      "memory_current_bytes": 158511104,
+      "memory_lifetime_peak_bytes": 198758400
+    },
+    "server_after": {
+      "cpu_usec": 9879998,
+      "memory_current_bytes": 158539776,
+      "memory_lifetime_peak_bytes": 198758400
+    }
+  },
+  {
+    "round": 0,
+    "case": "narrow100",
+    "format": "json",
+    "fetch_size": 5000,
+    "adapter": "fbfast",
+    "phase": "measured",
+    "seconds": 0.0015856669924687594,
+    "client_cpu_seconds": 0.00035199999999999815,
+    "process_peak_before_validation_bytes": 31506432,
+    "import_seconds": 0.005124542003613897,
+    "attach_prepare_seconds": 0.03482862500823103,
+    "stages": {
+      "stages": "native pipeline includes cleanup; not instrumented separately"
+    },
+    "build_id": "c1555f90c7d1b5dcb34e19e83ccb174ceb487bf6da3aec2dab2fc4635104a1b1",
+    "output_bytes": 2093,
+    "output_sha256": "f7611a6d38d653cfa3fcff3f81b36ff50781fc53175a2c5f9d9656f857562b0f",
+    "correctness": {
+      "phase": "validated",
+      "rows": 100,
+      "sha256": "08d7abaaaa1ec99301fedc9d4957d31ad417882977c23c0b0a26b6cedbf6ef9e"
+    },
+    "sampled_peak_rss_bytes": 31522816,
+    "rss_before_query_bytes": 31506432,
+    "rss_at_result_bytes": 31522816,
+    "rss_sample_count": 2,
+    "rss_interval_seconds": 0.005,
+    "stderr_bytes": 0,
+    "server_cpu_seconds": 0.007761,
+    "server_counter_interval_seconds": 0.03571104099682998,
+    "server_before": {
+      "cpu_usec": 9903867,
+      "memory_current_bytes": 158916608,
+      "memory_lifetime_peak_bytes": 198758400
+    },
+    "server_after": {
+      "cpu_usec": 9911628,
+      "memory_current_bytes": 159047680,
+      "memory_lifetime_peak_bytes": 198758400
+    }
+  },
+  {
+    "round": 0,
+    "case": "narrow100",
+    "format": "json",
+    "fetch_size": 5000,
+    "adapter": "firebird-driver",
+    "phase": "measured",
+    "seconds": 0.0017041659884853289,
+    "client_cpu_seconds": 0.0006879999999999942,
+    "process_peak_before_validation_bytes": 41254912,
+    "import_seconds": 0.034484250005334616,
+    "attach_prepare_seconds": 0.03715895800269209,
+    "stages": {
+      "execute_seconds": 0.0005568339984165505,
+      "fetch_decode_seconds": 0.0008847080025589094,
+      "cleanup_seconds": 0.00019633299962151796,
+      "conversion_seconds": 5.791700095869601e-05,
+      "first_batch_seconds": 0.0014388749987119809,
+      "effective_batch_rows": 5000
+    },
+    "build_id": "c1555f90c7d1b5dcb34e19e83ccb174ceb487bf6da3aec2dab2fc4635104a1b1",
+    "output_bytes": 2093,
+    "output_sha256": "f7611a6d38d653cfa3fcff3f81b36ff50781fc53175a2c5f9d9656f857562b0f",
+    "correctness": {
+      "phase": "validated",
+      "rows": 100,
+      "sha256": "08d7abaaaa1ec99301fedc9d4957d31ad417882977c23c0b0a26b6cedbf6ef9e"
+    },
+    "sampled_peak_rss_bytes": 41271296,
+    "rss_before_query_bytes": 41254912,
+    "rss_at_result_bytes": 41271296,
+    "rss_sample_count": 2,
+    "rss_interval_seconds": 0.005,
+    "stderr_bytes": 0,
+    "server_cpu_seconds": 0.007097,
+    "server_counter_interval_seconds": 0.0354975420050323,
+    "server_before": {
+      "cpu_usec": 9937094,
+      "memory_current_bytes": 158384128,
+      "memory_lifetime_peak_bytes": 198758400
+    },
+    "server_after": {
+      "cpu_usec": 9944191,
+      "memory_current_bytes": 158310400,
+      "memory_lifetime_peak_bytes": 198758400
+    }
+  },
+  {
+    "round": 0,
+    "case": "narrow100",
+    "format": "json",
+    "fetch_size": 5000,
+    "adapter": "firebird-driver-reset",
+    "phase": "measured",
+    "seconds": 0.002108749991748482,
+    "client_cpu_seconds": 0.0007629999999999998,
+    "process_peak_before_validation_bytes": 41271296,
+    "import_seconds": 0.03257220900559332,
+    "attach_prepare_seconds": 0.034247833013068885,
+    "stages": {
+      "execute_seconds": 0.0005679580062860623,
+      "fetch_decode_seconds": 0.0011359589989297092,
+      "cleanup_seconds": 0.00035454099997878075,
+      "conversion_seconds": 4.48749924544245e-05,
+      "first_batch_seconds": 0.0017012919997796416,
+      "effective_batch_rows": 5000
+    },
+    "build_id": "c1555f90c7d1b5dcb34e19e83ccb174ceb487bf6da3aec2dab2fc4635104a1b1",
+    "output_bytes": 2093,
+    "output_sha256": "f7611a6d38d653cfa3fcff3f81b36ff50781fc53175a2c5f9d9656f857562b0f",
+    "correctness": {
+      "phase": "validated",
+      "rows": 100,
+      "sha256": "08d7abaaaa1ec99301fedc9d4957d31ad417882977c23c0b0a26b6cedbf6ef9e"
+    },
+    "sampled_peak_rss_bytes": 41287680,
+    "rss_before_query_bytes": 41271296,
+    "rss_at_result_bytes": 41287680,
+    "rss_sample_count": 2,
+    "rss_interval_seconds": 0.005,
+    "stderr_bytes": 0,
+    "server_cpu_seconds": 0.007388,
+    "server_counter_interval_seconds": 0.036995041999034584,
+    "server_before": {
+      "cpu_usec": 9965370,
+      "memory_current_bytes": 158502912,
+      "memory_lifetime_peak_bytes": 198758400
+    },
+    "server_after": {
+      "cpu_usec": 9972758,
+      "memory_current_bytes": 158564352,
+      "memory_lifetime_peak_bytes": 198758400
+    }
+  },
+  {
+    "round": 0,
+    "case": "narrow100",
+    "format": "arrow",
+    "fetch_size": 5000,
+    "adapter": "fbfast",
+    "phase": "measured",
+    "seconds": 0.0014403749955818057,
+    "client_cpu_seconds": 0.00045000000000000595,
+    "process_peak_before_validation_bytes": 48726016,
+    "import_seconds": 0.08585508300166111,
+    "attach_prepare_seconds": 0.028324166996753775,
+    "stages": {
+      "stages": "native pipeline includes cleanup; not instrumented separately"
+    },
+    "build_id": "c1555f90c7d1b5dcb34e19e83ccb174ceb487bf6da3aec2dab2fc4635104a1b1",
+    "arrow_buffer_bytes": 800,
+    "schema": "ID: int32\n  -- field metadata --\n  fbfast.charset: '0'\n  fbfast.original_arrow_type: 'Int32'\n  fbfast.scale: '0'\n  fbfast.sql_type: '496'\n  fbfast.storage_bytes: '4'\n  fbfast.subtype: '0'\nV: int32\n  -- field metadata --\n  fbfast.charset: '0'\n  fbfast.original_arrow_type: 'Int32'\n  fbfast.scale: '0'\n  fbfast.sql_type: '496'\n  fbfast.storage_bytes: '4'\n  fbfast.subtype: '0'",
+    "correctness": {
+      "phase": "validated",
+      "rows": 100,
+      "sha256": "08d7abaaaa1ec99301fedc9d4957d31ad417882977c23c0b0a26b6cedbf6ef9e"
+    },
+    "sampled_peak_rss_bytes": 49020928,
+    "rss_before_query_bytes": 48726016,
+    "rss_at_result_bytes": 49020928,
+    "rss_sample_count": 2,
+    "rss_interval_seconds": 0.005,
+    "stderr_bytes": 0,
+    "server_cpu_seconds": 0.008111,
+    "server_counter_interval_seconds": 0.04264454099757131,
+    "server_before": {
+      "cpu_usec": 9991377,
+      "memory_current_bytes": 158658560,
+      "memory_lifetime_peak_bytes": 198758400
+    },
+    "server_after": {
+      "cpu_usec": 9999488,
+      "memory_current_bytes": 159174656,
+      "memory_lifetime_peak_bytes": 198758400
+    }
+  },
+  {
+    "round": 0,
+    "case": "narrow100",
+    "format": "arrow",
+    "fetch_size": 5000,
+    "adapter": "firebird-driver",
+    "phase": "measured",
+    "seconds": 0.001859541007434018,
+    "client_cpu_seconds": 0.0008389999999999925,
+    "process_peak_before_validation_bytes": 58277888,
+    "import_seconds": 0.052907667006365955,
+    "attach_prepare_seconds": 0.031483833998208866,
+    "stages": {
+      "execute_seconds": 0.0005368749989429489,
+      "fetch_decode_seconds": 0.0009089999948628247,
+      "cleanup_seconds": 0.00026916600472759455,
+      "conversion_seconds": 0.00013637500524055213,
+      "first_batch_seconds": 0.0014420000079553574,
+      "effective_batch_rows": 5000
+    },
+    "build_id": "c1555f90c7d1b5dcb34e19e83ccb174ceb487bf6da3aec2dab2fc4635104a1b1",
+    "arrow_buffer_bytes": 800,
+    "schema": "ID: int32\nV: int32",
+    "correctness": {
+      "phase": "validated",
+      "rows": 100,
+      "sha256": "08d7abaaaa1ec99301fedc9d4957d31ad417882977c23c0b0a26b6cedbf6ef9e"
+    },
+    "sampled_peak_rss_bytes": 58507264,
+    "rss_before_query_bytes": 58277888,
+    "rss_at_result_bytes": 58507264,
+    "rss_sample_count": 2,
+    "rss_interval_seconds": 0.005,
+    "stderr_bytes": 0,
+    "server_cpu_seconds": 0.007376,
+    "server_counter_interval_seconds": 0.03338599999551661,
+    "server_before": {
+      "cpu_usec": 10020999,
+      "memory_current_bytes": 159051776,
+      "memory_lifetime_peak_bytes": 198758400
+    },
+    "server_after": {
+      "cpu_usec": 10028375,
+      "memory_current_bytes": 158691328,
+      "memory_lifetime_peak_bytes": 198758400
+    }
+  },
+  {
+    "round": 0,
+    "case": "narrow100",
+    "format": "arrow",
+    "fetch_size": 5000,
+    "adapter": "firebird-driver-reset",
+    "phase": "measured",
+    "seconds": 0.0018485000036889687,
+    "client_cpu_seconds": 0.0006690000000000029,
+    "process_peak_before_validation_bytes": 58507264,
+    "import_seconds": 0.06021779200818855,
+    "attach_prepare_seconds": 0.03433900000527501,
+    "stages": {
+      "execute_seconds": 0.00045525000314228237,
+      "fetch_decode_seconds": 0.0009797500097192824,
+      "cleanup_seconds": 0.0003227909910492599,
+      "conversion_seconds": 8.64589965203777e-05,
+      "first_batch_seconds": 0.0014329160039778799,
+      "effective_batch_rows": 5000
+    },
+    "build_id": "c1555f90c7d1b5dcb34e19e83ccb174ceb487bf6da3aec2dab2fc4635104a1b1",
+    "arrow_buffer_bytes": 800,
+    "schema": "ID: int32\nV: int32",
+    "correctness": {
+      "phase": "validated",
+      "rows": 100,
+      "sha256": "08d7abaaaa1ec99301fedc9d4957d31ad417882977c23c0b0a26b6cedbf6ef9e"
+    },
+    "sampled_peak_rss_bytes": 58736640,
+    "rss_before_query_bytes": 58507264,
+    "rss_at_result_bytes": 58736640,
+    "rss_sample_count": 2,
+    "rss_interval_seconds": 0.005,
+    "stderr_bytes": 0,
+    "server_cpu_seconds": 0.007184,
+    "server_counter_interval_seconds": 0.03238116700958926,
+    "server_before": {
+      "cpu_usec": 10049966,
+      "memory_current_bytes": 158846976,
+      "memory_lifetime_peak_bytes": 198758400
+    },
+    "server_after": {
+      "cpu_usec": 10057150,
+      "memory_current_bytes": 158797824,
+      "memory_lifetime_peak_bytes": 198758400
+    }
+  },
+  {
+    "round": 0,
+    "case": "narrow100",
+    "format": "polars",
+    "fetch_size": 5000,
+    "adapter": "fbfast",
+    "phase": "measured",
+    "seconds": 0.0017258750012842938,
+    "client_cpu_seconds": 0.0004949999999999954,
+    "process_peak_before_validation_bytes": 63422464,
+    "import_seconds": 0.13265245901129674,
+    "attach_prepare_seconds": 0.07316075000562705,
+    "stages": {
+      "stages": "native pipeline includes cleanup; not instrumented separately"
+    },
+    "build_id": "c1555f90c7d1b5dcb34e19e83ccb174ceb487bf6da3aec2dab2fc4635104a1b1",
+    "polars_estimated_bytes": 800,
+    "schema": "Schema({'ID': Int32, 'V': Int32})",
+    "correctness": {
+      "phase": "validated",
+      "rows": 100,
+      "sha256": "08d7abaaaa1ec99301fedc9d4957d31ad417882977c23c0b0a26b6cedbf6ef9e"
+    },
+    "sampled_peak_rss_bytes": 63471616,
+    "rss_before_query_bytes": 63373312,
+    "rss_at_result_bytes": 63471616,
+    "rss_sample_count": 2,
+    "rss_interval_seconds": 0.005,
+    "stderr_bytes": 0,
+    "server_cpu_seconds": 0.007688,
+    "server_counter_interval_seconds": 0.03689895800198428,
+    "server_before": {
+      "cpu_usec": 10077673,
+      "memory_current_bytes": 159150080,
+      "memory_lifetime_peak_bytes": 198758400
+    },
+    "server_after": {
+      "cpu_usec": 10085361,
+      "memory_current_bytes": 158982144,
+      "memory_lifetime_peak_bytes": 198758400
+    }
+  },
+  {
+    "round": 0,
+    "case": "narrow100",
+    "format": "polars",
+    "fetch_size": 5000,
+    "adapter": "firebird-driver",
+    "phase": "measured",
+    "seconds": 0.0019712500070454553,
+    "client_cpu_seconds": 0.0007860000000000089,
+    "process_peak_before_validation_bytes": 71548928,
+    "import_seconds": 0.09752737499366049,
+    "attach_prepare_seconds": 0.054737750004278496,
+    "stages": {
+      "execute_seconds": 0.0006093749980209395,
+      "fetch_decode_seconds": 0.0009672500018496066,
+      "cleanup_seconds": 0.00022412500402424484,
+      "conversion_seconds": 0.00016275000234600157,
+      "first_batch_seconds": 0.0015724169934401289,
+      "effective_batch_rows": 5000
+    },
+    "build_id": "c1555f90c7d1b5dcb34e19e83ccb174ceb487bf6da3aec2dab2fc4635104a1b1",
+    "polars_estimated_bytes": 800,
+    "schema": "Schema({'ID': Int32, 'V': Int32})",
+    "correctness": {
+      "phase": "validated",
+      "rows": 100,
+      "sha256": "08d7abaaaa1ec99301fedc9d4957d31ad417882977c23c0b0a26b6cedbf6ef9e"
+    },
+    "sampled_peak_rss_bytes": 71647232,
+    "rss_before_query_bytes": 71548928,
+    "rss_at_result_bytes": 71647232,
+    "rss_sample_count": 2,
+    "rss_interval_seconds": 0.005,
+    "stderr_bytes": 0,
+    "server_cpu_seconds": 0.008038,
+    "server_counter_interval_seconds": 0.038868167001055554,
+    "server_before": {
+      "cpu_usec": 10108300,
+      "memory_current_bytes": 159023104,
+      "memory_lifetime_peak_bytes": 198758400
+    },
+    "server_after": {
+      "cpu_usec": 10116338,
+      "memory_current_bytes": 159031296,
+      "memory_lifetime_peak_bytes": 198758400
+    }
+  },
+  {
+    "round": 0,
+    "case": "narrow100",
+    "format": "polars",
+    "fetch_size": 5000,
+    "adapter": "firebird-driver-reset",
+    "phase": "measured",
+    "seconds": 0.0020869589934591204,
+    "client_cpu_seconds": 0.0008289999999999964,
+    "process_peak_before_validation_bytes": 71712768,
+    "import_seconds": 0.0836027499899501,
+    "attach_prepare_seconds": 0.04416608400060795,
+    "stages": {
+      "execute_seconds": 0.0005148750060470775,
+      "fetch_decode_seconds": 0.000978416996076703,
+      "cleanup_seconds": 0.00041237499681301415,
+      "conversion_seconds": 0.0001764170010574162,
+      "first_batch_seconds": 0.0014906249998603016,
+      "effective_batch_rows": 5000
+    },
+    "build_id": "c1555f90c7d1b5dcb34e19e83ccb174ceb487bf6da3aec2dab2fc4635104a1b1",
+    "polars_estimated_bytes": 800,
+    "schema": "Schema({'ID': Int32, 'V': Int32})",
+    "correctness": {
+      "phase": "validated",
+      "rows": 100,
+      "sha256": "08d7abaaaa1ec99301fedc9d4957d31ad417882977c23c0b0a26b6cedbf6ef9e"
+    },
+    "sampled_peak_rss_bytes": 71811072,
+    "rss_before_query_bytes": 71712768,
+    "rss_at_result_bytes": 71811072,
+    "rss_sample_count": 2,
+    "rss_interval_seconds": 0.005,
+    "stderr_bytes": 0,
+    "server_cpu_seconds": 0.00807,
+    "server_counter_interval_seconds": 0.03819987500901334,
+    "server_before": {
+      "cpu_usec": 10138880,
+      "memory_current_bytes": 159113216,
+      "memory_lifetime_peak_bytes": 198758400
+    },
+    "server_after": {
+      "cpu_usec": 10146950,
+      "memory_current_bytes": 158646272,
+      "memory_lifetime_peak_bytes": 198758400
+    }
+  }
+]

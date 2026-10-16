@@ -2,6 +2,7 @@
 
 from ._bootstrap import build_info, client_info
 from ._native import (
+    ArrowBatch, ArrowSchema,
     AuthenticationError,
     CleanupError,
     ClientLibraryError,
@@ -27,12 +28,15 @@ from ._native import (
 )
 from .pool import Pool
 from .snapshot import Snapshot
-from .stream import AsyncStream, Stream, JsonStream, AsyncJsonStream
+from .temporal import TimeWithZone
+from .stream import AsyncStream, Stream, JsonStream, AsyncJsonStream, ArrowStream, AsyncArrowStream
 from .registry import (
     PoolAlreadyInitializedError, PoolNotInitializedError,
     close_pool, close_pool_sync, get_pool, init_pool, init_pool_sync,
 )
 from .api import (
+    stream_arrow, stream_arrow_async,
+    fetch_arrow, fetch_arrow_async, fetch_polars, fetch_polars_async,
     fetch_json, fetch_json_async, stream_json, stream_json_async,
     explain, explain_async, fetch_all, fetch_all_async, fetch_one, fetch_one_async,
     fetch_val, fetch_val_async, stream, stream_async,
@@ -40,10 +44,12 @@ from .api import (
 
 __version__ = "0.1.0"
 __all__ = [
+    "ArrowBatch", "ArrowSchema", "ArrowStream", "AsyncArrowStream", "stream_arrow", "stream_arrow_async",
     "__version__",
     "build_info",
     "client_info",
     "FirebirdConfig",
+    "TimeWithZone",
     "FbFastError",
     "ConfigurationError",
     "UnsupportedFeatureError",
@@ -59,6 +65,10 @@ __all__ = [
     "close_pool",
     "close_pool_sync",
     "fetch_all",
+    "fetch_arrow",
+    "fetch_arrow_async",
+    "fetch_polars",
+    "fetch_polars_async",
     "fetch_all_async",
     "fetch_one",
     "fetch_one_async",

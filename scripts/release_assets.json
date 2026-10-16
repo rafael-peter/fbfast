@@ -1,0 +1,11 @@
+{
+  "version": "5.0.3.1683-0",
+  "tag": "v5.0.3",
+  "assets": {
+    "Darwin-arm64": {"name": "Firebird-5.0.3.1683-0-macos-arm64.pkg", "sha256": "07e06ba4c0f13c9c39b65b854d1e66b59bfcfbd1513c22e753f2d32421cc7fad"},
+    "Darwin-x86_64": {"name": "Firebird-5.0.3.1683-0-macos-x64.pkg", "sha256": "abc6108edd0dc37028db54cbae7ad86b75853e8534f2917a17b575d42dc3d08f"},
+    "Linux-x86_64": {"name": "Firebird-5.0.3.1683-0-linux-x64.tar.gz", "sha256": "ef281c53f85756288151a86831375c9ae668caaeccd1b18103d523ba8f444779"},
+    "Linux-aarch64": {"name": "Firebird-5.0.3.1683-0-linux-arm64.tar.gz", "sha256": "e375341466e625bf17e4416723c1465a646d44903011ac4b89f84afe1df3633e"},
+    "Windows-AMD64": {"name": "Firebird-5.0.3.1683-0-windows-x64.zip", "sha256": "3e3c38fde46ff1d73cb964c1422a4535892bd2a8e5b6ea692685639a225cf3bd"}
+  }
+}

@@ -1,4 +1,4 @@
-use super::{BlobReader, NoBlobs, Value};
+use super::{NativeReader, NoNative, Value};
 use crate::{
     config::Config,
     error::{Error, ErrorKind},
@@ -23,6 +23,12 @@ impl DecodePlan {
         self.schema.columns.iter().try_fold(0usize, |sum, column| {
             let payload = if matches!(column.sql_type, 452 | 448) {
                 column.length as usize
+            } else if matches!(column.sql_type, 32760 | 32762) {
+                43
+            } else if column.sql_type == 32754 {
+                std::mem::size_of::<fbfast_native::ZonedValue>() + fbfast_native::ZONE_CAPACITY
+            } else if column.sql_type == 32756 {
+                fbfast_native::ZONE_CAPACITY
             } else {
                 0
             };
@@ -50,7 +56,22 @@ impl DecodePlan {
         for column in &schema.columns {
             if !matches!(
                 column.sql_type,
-                500 | 496 | 580 | 32752 | 482 | 480 | 32764 | 452 | 448 | 570 | 560 | 510 | 520
+                500 | 496
+                    | 580
+                    | 32752
+                    | 482
+                    | 480
+                    | 32764
+                    | 452
+                    | 448
+                    | 570
+                    | 560
+                    | 510
+                    | 520
+                    | 32760
+                    | 32762
+                    | 32754
+                    | 32756
             ) {
                 return Err(Error::new(
                     ErrorKind::UnsupportedType,
@@ -78,14 +99,14 @@ impl DecodePlan {
     }
 
     pub fn value(&self, index: usize, row: &[u8]) -> Result<Value, Error> {
-        self.value_with_blobs(index, row, &mut NoBlobs)
+        self.value_with_native(index, row, &mut NoNative)
     }
 
-    pub fn value_with_blobs(
+    pub fn value_with_native(
         &self,
         index: usize,
         row: &[u8],
-        blobs: &mut impl BlobReader,
+        native: &mut impl NativeReader,
     ) -> Result<Value, Error> {
         let c = self
             .schema
@@ -114,8 +135,30 @@ impl DecodePlan {
             });
         }
         match c.sql_type {
-            482 => Ok(Value::Float(f64::from_ne_bytes(bytes(row, offset)?))),
-            480 => Ok(Value::Float(f32::from_ne_bytes(bytes(row, offset)?) as f64)),
+            32754 | 32756 => {
+                let length = if c.sql_type == 32754 { 12 } else { 8 };
+                let data = row
+                    .get(offset..offset + length)
+                    .ok_or_else(|| conversion("Zoned value exceeds message bounds"))?;
+                let value = native.zoned(c.sql_type, data)?;
+                Ok(if c.sql_type == 32754 {
+                    Value::TimestampTz(Box::new(value))
+                } else {
+                    Value::TimeTz {
+                        utc_time: value.utc_time,
+                        zone: value.zone,
+                    }
+                })
+            }
+            32760 | 32762 => {
+                let length = if c.sql_type == 32760 { 8 } else { 16 };
+                let data = row
+                    .get(offset..offset + length)
+                    .ok_or_else(|| conversion("DECFLOAT exceeds message bounds"))?;
+                Ok(Value::DecFloat(native.decimal(c.sql_type, data)?))
+            }
+            480 => Ok(Value::Float(f64::from_ne_bytes(bytes(row, offset)?))),
+            482 => Ok(Value::Float(f32::from_ne_bytes(bytes(row, offset)?) as f64)),
             32764 => match bytes::<1>(row, offset)?[0] {
                 0 => Ok(Value::Bool(false)),
                 1 => Ok(Value::Bool(true)),
@@ -125,7 +168,7 @@ impl DecodePlan {
             520 => {
                 let binary =
                     c.subtype == 0 || c.charset == 1 || (c.charset == 0 && !self.none_as_utf8);
-                let data = blobs.read(
+                let data = native.blob(
                     bytes(row, offset)?,
                     if c.subtype == 0 { 0 } else { c.charset },
                 )?;

@@ -1,0 +1,134 @@
+name: Build and test wheels
+
+on:
+  workflow_call:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  desktop:
+    name: ${{ matrix.runner }} / Python ${{ matrix.python }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-15, macos-15-intel, windows-2022]
+        python: ['3.11', '3.12', '3.13', '3.14']
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+        if: runner.os == 'Windows'
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable action
+        with:
+          toolchain: '1.91.1'
+      - name: Check release version
+        run: python scripts/check_release.py
+      - name: Install build tools
+        run: python -m pip install maturin==1.10.2 wheel==0.45.1 pefile==2024.8.26
+      - name: Fetch verified SDK without system installation
+        run: python scripts/download_sdk.py
+      - name: Core and native unit/property tests
+        if: matrix.python == '3.14'
+        run: cargo test -p fbfast-core -p fbfast-native --lib --tests
+      - name: Build bundled wheel
+        env:
+          MACOSX_DEPLOYMENT_TARGET: '11.0'
+        run: python scripts/build_vendor.py --release --out dist/vendor
+      - name: Verify copied runtime in isolated process
+        run: python scripts/verify_vendor.py --package dist/vendor/fbfast
+      - name: Install exact wheel and analytical consumers
+        run: python -m pip install dist/wheels/*.whl pyarrow==26.0.0 polars==2.0.0
+      - name: Query disposable local Firebird using installed wheel
+        run: python scripts/ci_smoke.py --sdk "$FBFAST_CLIENT_ROOT"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-wheels-${{ matrix.runner }}-${{ matrix.python }}
+          path: dist/wheels/*.whl
+          if-no-files-found: error
+          retention-days: 14
+
+  linux:
+    name: Linux ${{ matrix.arch }} / Python ${{ matrix.python }}
+    runs-on: ${{ matrix.runner }}
+    container: ${{ matrix.image }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['311', '312', '313', '314']
+        arch: [x86_64, aarch64]
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+            image: quay.io/pypa/manylinux_2_28_x86_64@sha256:4131ddd7acb9c6c966af02fe7e71edc51e078c2d41f475966697676430bfa2ae
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+            image: quay.io/pypa/manylinux_2_28_aarch64@sha256:abd1230aa9e4058a74b89d27cd14ba18c0db036d7bfe6e6f219a29ea63c24eb6
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Select CPython with the GIL
+        run: echo "/opt/python/cp${{ matrix.python }}-cp${{ matrix.python }}/bin" >> "$GITHUB_PATH"
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable action
+        with:
+          toolchain: '1.91.1'
+      - name: Check release version
+        run: python scripts/check_release.py
+      - name: Install SDK dependencies and build tools
+        run: |
+          dnf install -y libicu-devel libtommath
+          python -m pip install maturin==1.10.2 wheel==0.45.1 auditwheel==6.4.2 patchelf==0.17.2.4
+      - name: Fetch verified SDK
+        run: python scripts/download_sdk.py
+      - name: Core and native unit/property tests
+        if: matrix.python == '314'
+        run: cargo test -p fbfast-core -p fbfast-native --lib --tests
+      - name: Build and audit complete manylinux wheel
+        run: python scripts/build_vendor.py --release --out dist/vendor
+      - name: Verify copied runtime in isolated process
+        run: python scripts/verify_vendor.py --package dist/vendor/fbfast
+      - name: Install exact wheel and analytical consumers
+        run: python -m pip install dist/wheels/*.whl pyarrow==26.0.0 polars==2.0.0
+      - name: Query disposable local Firebird using installed wheel
+        run: python scripts/ci_smoke.py --sdk "$FBFAST_CLIENT_ROOT"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-wheels-linux-${{ matrix.arch }}-${{ matrix.python }}
+          path: dist/wheels/*.whl
+          if-no-files-found: error
+          retention-days: 14
+
+  sdist:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.14'
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249
+        with:
+          toolchain: '1.91.1'
+      - run: python scripts/check_release.py
+      - run: python -m pip install build==1.3.0 twine==6.2.0
+      - run: python -m build --sdist --outdir dist/sdist
+      - run: python -m twine check dist/sdist/*
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-sdist
+          path: dist/sdist/*.tar.gz
+          if-no-files-found: error
+          retention-days: 14

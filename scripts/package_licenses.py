@@ -8,17 +8,18 @@ import subprocess
 from pathlib import Path
 
 
-def collect(root: Path, destination: Path, env: dict[str, str]) -> None:
+def collect(root: Path, destination: Path, env: dict[str, str], target: str) -> None:
     metadata = json.loads(
         subprocess.check_output(
-            ["cargo", "metadata", "--locked", "--format-version", "1"],
+            ["cargo", "metadata", "--locked", "--format-version", "1", "--filter-platform", target],
             cwd=root,
             env=env,
             text=True,
         )
     )
     # Cargo metadata includes dev/test dependencies too. Traverse only the normal
-    # and build edges rooted in the extension shipped to the consumer.
+    # and build edges rooted in the extension shipped to the consumer. Resolve
+    # for the wheel's target, excluding dependencies used only on other OSes.
     nodes = {node["id"]: node for node in metadata["resolve"]["nodes"]}
     extension = next(p["id"] for p in metadata["packages"] if p["name"] == "fbfast-python")
     shipped: set[str] = set()

@@ -28,6 +28,13 @@ struct FbColumn {
     int32_t scale, subtype;
     char name[256];
 };
+struct FbZoned {
+    int32_t utc_date;
+    uint32_t utc_time;
+    int32_t local_date;
+    uint32_t local_time;
+    char zone[128];
+};
 void* fbfast_attach(void*, SqlStateFn, const FbAttach*, FbError*) noexcept;
 void fbfast_disconnect(void*, FbError*) noexcept;
 void fbfast_release(void*) noexcept;
@@ -56,4 +63,6 @@ uint32_t fbfast_read_blob(void*, void*, uint32_t capacity, uint32_t* eof, FbErro
 void fbfast_close_blob(void*, FbError*) noexcept;
 void fbfast_decimal_text(void*, uint32_t type, const uint8_t*, char*, uint32_t capacity, FbError*) noexcept;
 void fbfast_decimal_bytes(void*, uint32_t type, const char*, uint8_t*, FbError*) noexcept;
+void fbfast_decode_zoned(void*, uint32_t type, const uint8_t*, FbZoned*, FbError*) noexcept;
+void fbfast_encode_zoned(void*, uint32_t type, int32_t date, uint32_t time, const char*, uint8_t*, FbError*) noexcept;
 }

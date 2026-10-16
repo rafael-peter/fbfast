@@ -8,6 +8,8 @@ Este é o documento único de trabalho dos agentes que implementarão a bibliote
 
 **Atualização de limites em 15/10/2026:** por orientação do autor, `max_result_bytes` foi removido. O resultado completo tem apenas limite opcional de linhas; limites por lote, BLOB e cache permanecem. A seção 6.3 incorpora essa alteração; detalhes em `docs/decisions/0009-config-ergonomics.md`.
 
+**Revisão de escopo pelo autor em 15/10/2026 (prevalece sobre P0–P6 abaixo):** o autor informou que a biblioteca já oferece as funcionalidades de leitura de que precisa e pediu foco em distribuição: workflow GitHub Actions para builds por SO e integração de publicação na sua conta PyPI. A entrega ativa passa a ser empacotar, testar e automatizar a publicação da API atual, mantendo o núcleo Rust e a prioridade de desempenho. Extração paralela P5, novas APIs/métricas e a matriz extensa de benchmarks ficam como backlog, não como bloqueadores desta entrega. Sync/async já implementados permanecem; não foi solicitada a remoção de funcionalidades. Publicação deve ser acionada por release/tag do autor, após configurar o Trusted Publisher; esta revisão não autoriza commit/push ou publicar automaticamente o worktree ainda não commitado. Detalhes em `docs/decisions/0018-release-scope.md`.
+
 ## 1. Goal e resultado esperado
 
 Construir `fbfast`, uma biblioteca Python de leitura para Firebird 5, com núcleo Rust, pool nativa, APIs síncrona/assíncrona e saídas eficientes em tuplas, Arrow/Polars e JSON.

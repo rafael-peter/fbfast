@@ -37,6 +37,7 @@ pub use stream::{Stream, StreamAction, StreamItem, StreamWait};
 
 #[derive(Debug)]
 pub enum Output {
+    Arrow(crate::sinks::arrow::ArrowOutput),
     Rows(Rows),
     Json(crate::sinks::json::JsonOutput),
     Plan(String),
@@ -45,6 +46,7 @@ pub enum Output {
 impl Output {
     pub(super) fn size(&self) -> Option<(u64, u64)> {
         match self {
+            Self::Arrow(arrow) => Some((arrow.rows as u64, arrow.bytes as u64)),
             Self::Rows(rows) => Some((rows.count as u64, rows.bytes as u64)),
             Self::Json(json) => Some((json.rows as u64, json.data.len() as u64)),
             _ => None,
@@ -59,6 +61,22 @@ pub struct Pool {
 }
 
 impl Pool {
+    pub fn submit_arrow(
+        &self,
+        sql: String,
+        params: Vec<Value>,
+        mode: crate::sinks::arrow::ArrowMode,
+        timeout: Option<f64>,
+    ) -> Result<Pending, Error> {
+        crate::statements::validate_read_query(&sql)?;
+        crate::execution::control::deadline(timeout)?;
+        self.inner()?.submit(Work::Arrow {
+            sql,
+            params,
+            mode,
+            timeout,
+        })
+    }
     pub fn new(config: Config, client_path: PathBuf) -> Self {
         Self {
             inner: Some(Arc::new(Inner::new(config, client_path))),
@@ -137,7 +155,13 @@ impl Pool {
         unique_names: bool,
         timeout: Option<f64>,
     ) -> Result<Stream, Error> {
-        self.stream_output(sql, params, batch_rows, unique_names, timeout, None)
+        self.stream_output(
+            sql,
+            params,
+            batch_rows,
+            timeout,
+            stream::StreamFormat::Rows(unique_names),
+        )
     }
     pub fn stream_json(
         &self,
@@ -150,19 +174,36 @@ impl Pool {
         ),
         timeout: Option<f64>,
     ) -> Result<Stream, Error> {
-        self.stream_output(sql, params, batch_rows, json.0.records, timeout, Some(json))
+        self.stream_output(
+            sql,
+            params,
+            batch_rows,
+            timeout,
+            stream::StreamFormat::Json(json),
+        )
+    }
+    pub fn stream_arrow(
+        &self,
+        sql: String,
+        params: Vec<Value>,
+        batch_rows: Option<u32>,
+        timeout: Option<f64>,
+    ) -> Result<Stream, Error> {
+        self.stream_output(
+            sql,
+            params,
+            batch_rows,
+            timeout,
+            stream::StreamFormat::Arrow,
+        )
     }
     fn stream_output(
         &self,
         sql: String,
         params: Vec<Value>,
         batch_rows: Option<u32>,
-        unique_names: bool,
         timeout: Option<f64>,
-        json: Option<(
-            crate::sinks::json::JsonOptions,
-            crate::sinks::json::JsonFormat,
-        )>,
+        format: stream::StreamFormat,
     ) -> Result<Stream, Error> {
         crate::statements::validate_read_query(&sql)?;
         crate::execution::control::deadline(timeout)?;
@@ -177,8 +218,7 @@ impl Pool {
             sql,
             params,
             batch_rows,
-            unique_names,
-            json,
+            format,
             timeout,
             producer: stream_worker::Producer {
                 sender,

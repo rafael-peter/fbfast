@@ -33,6 +33,49 @@ fn integer(row: &[u8], metadata: &Metadata, column: usize) -> i32 {
 
 #[test]
 #[ignore = "requires the isolated fixture; scripts/test_native.py runs this"]
+fn zoned_codec_checks_buffer_bounds_padding_and_every_fixed_offset_minute() {
+    let mut c = connect();
+    for kind in [32754, 32756] {
+        let length = if kind == 32754 { 12 } else { 8 };
+        for wrong in [0, length - 1, length + 1] {
+            assert!(c.decode_zoned(kind, &vec![0; wrong]).is_err());
+        }
+        assert!(c.encode_zoned(kind, 60_000, 864_000_000, "UTC").is_err());
+        assert!(c.encode_zoned(kind, 60_000, 0, "invalid\0zone").is_err());
+        assert!(c.encode_zoned(kind, 60_000, 0, "NoSuch/Zone").is_err());
+        for minutes in -840i64..=840 {
+            let zone = format!(
+                "{}{:02}:{:02}",
+                if minutes < 0 { "-" } else { "+" },
+                minutes.abs() / 60,
+                minutes.abs() % 60
+            );
+            for ticks in [0, 1, 863_999_999] {
+                let bytes = c.encode_zoned(kind, 60_000, ticks, &zone).unwrap();
+                assert_eq!(&bytes[length - 2..], &[0, 0]);
+                let actual = c.decode_zoned(kind, &bytes).unwrap();
+                assert_eq!(actual.utc_time, ticks);
+                assert_eq!(actual.zone, zone);
+                let local = ticks as i64 + minutes * 600_000;
+                assert_eq!(actual.local_time as i64, local.rem_euclid(864_000_000));
+                if kind == 32754 {
+                    assert_eq!(actual.utc_date, 60_000);
+                    assert_eq!(
+                        actual.local_date as i64,
+                        60_000 + local.div_euclid(864_000_000)
+                    );
+                }
+            }
+        }
+    }
+    assert!(c.decode_zoned(0, &[0; 8]).is_err());
+    assert!(c.encode_zoned(32754, -678_576, 0, "UTC").is_err());
+    assert!(c.encode_zoned(32754, 2_973_484, 0, "UTC").is_err());
+    c.close().unwrap();
+}
+
+#[test]
+#[ignore = "requires the isolated fixture; scripts/test_native.py runs this"]
 fn independent_cancel_generation_and_handle_lifetime() {
     use std::{
         thread,

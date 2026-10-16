@@ -1,7 +1,7 @@
 use super::{control::QueryOptions, ExecutionConnection};
 use crate::{
     config::Config,
-    decode::{bind, BlobReader, DecodePlan, Value},
+    decode::{bind, DecodePlan, NativeReader, Value},
     error::{Error, ErrorKind},
     sinks::rows::Rows,
     statements::cache::Entry,
@@ -18,7 +18,7 @@ pub(super) trait RowSink {
         plan: &DecodePlan,
         row: &[u8],
         config: &Config,
-        blobs: &mut impl BlobReader,
+        native: &mut impl NativeReader,
     ) -> Result<(), Error>;
     fn after_fetch(&mut self) -> Result<bool, Error> {
         Ok(true)
@@ -31,9 +31,9 @@ impl RowSink for Rows {
         plan: &DecodePlan,
         row: &[u8],
         config: &Config,
-        blobs: &mut impl BlobReader,
+        native: &mut impl NativeReader,
     ) -> Result<(), Error> {
-        self.push(plan, row, config, blobs)
+        self.push(plan, row, config, native)
     }
 }
 
@@ -47,7 +47,9 @@ impl ExecutionConnection {
         batch_rows: u32,
         sink: &mut impl RowSink,
     ) -> Result<(), Error> {
-        let parameters = bind::encode(&entry.input, params)?;
+        let parameters = bind::encode_with(&entry.input, params, &mut |kind, value| {
+            crate::decode::encode_native(&mut self.native, kind, value)
+        })?;
         options.cancellation.check()?;
         check_deadline(deadline)?;
         let native_timeout = deadline
@@ -87,13 +89,13 @@ impl ExecutionConnection {
                     )
                 })?;
                 options.cancellation.check()?;
-                let mut blobs = super::blob::Blobs {
+                let mut native = super::decoder::NativeValues {
                     native: &mut self.native,
                     cancellation: options.cancellation,
                     deadline,
                     limit: self.config.max_blob_bytes,
                 };
-                sink.push(&entry.plan, row, &self.config, &mut blobs)?;
+                sink.push(&entry.plan, row, &self.config, &mut native)?;
                 check_deadline(deadline)?;
             }
             if !sink.after_fetch()? || options.first || batch.eof {

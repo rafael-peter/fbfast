@@ -24,6 +24,7 @@ fn main() {
         .file("bridge/cursor.cpp")
         .file("bridge/blob.cpp")
         .file("bridge/decimal.cpp")
+        .file("bridge/zoned.cpp")
         .file("bridge/control.cpp")
         .warnings(true)
         .compile("fbfast_bridge");

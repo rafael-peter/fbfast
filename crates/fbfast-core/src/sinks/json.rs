@@ -1,6 +1,6 @@
 //! JSON writers consume one decoded cell at a time, never a row table or JSON tree.
 use crate::{
-    decode::{BlobReader, DecodePlan},
+    decode::{DecodePlan, NativeReader},
     error::{Error, ErrorKind},
 };
 
@@ -57,7 +57,7 @@ impl JsonWriter {
         plan: &DecodePlan,
         message: &[u8],
         out: &mut Vec<u8>,
-        blobs: &mut impl BlobReader,
+        native: &mut impl NativeReader,
     ) -> Result<(), Error> {
         out.push(if self.options.records { b'{' } else { b'[' });
         for (index, column) in plan.schema.columns.iter().enumerate() {
@@ -70,7 +70,7 @@ impl JsonWriter {
             }
             super::json_value::value(
                 out,
-                &plan.value_with_blobs(index, message, blobs)?,
+                &plan.value_with_native(index, message, native)?,
                 column.sql_type,
                 self.options,
             )?;

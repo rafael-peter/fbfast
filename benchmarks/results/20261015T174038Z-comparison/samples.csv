@@ -1,0 +1,5 @@
+round,case,format,adapter,fetch_size,seconds,client_cpu_seconds,server_cpu_seconds,sampled_peak_rss_bytes,rss_before_query_bytes,process_peak_before_validation_bytes,error
+0,narrow100,tuples,fbfast,5000,0.001421957989805378,0.0003110000000000057,0.008555,32604160,32571392,32604160,
+0,narrow100,tuples,firebird-driver,5000,,,,,,,"Worker expected ready; received {'phase': 'error', 'error_type': 'AttributeError'}"
+0,narrow100,tuples,firebird-driver-reset,5000,,,,,,,"Worker expected ready; received {'phase': 'error', 'error_type': 'AttributeError'}"
+0,narrow100,tuples,fdb,5000,,,,,,,"Worker expected ready; received {'phase': 'error', 'error_type': 'DatabaseError'}"

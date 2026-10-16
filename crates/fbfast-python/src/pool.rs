@@ -14,6 +14,27 @@ pub struct PyPool {
 
 #[pymethods]
 impl PyPool {
+    #[pyo3(signature = (sql, params=None, *, mode="arrow", timeout=None, asynchronous=false))]
+    fn arrow<'py>(
+        &self,
+        py: Python<'py>,
+        sql: String,
+        params: Option<&Bound<'py, PyAny>>,
+        mode: &str,
+        timeout: Option<f64>,
+        asynchronous: bool,
+    ) -> PyResult<Py<PyAny>> {
+        self.inner.stats().map_err(from_core)?;
+        crate::arrow::query(
+            py,
+            self,
+            sql,
+            params,
+            crate::arrow::mode(mode)?,
+            timeout,
+            asynchronous,
+        )
+    }
     #[pyo3(signature = (sql, params=None, *, options, timeout=None, asynchronous=false))]
     fn json<'py>(
         &self,
@@ -51,15 +72,16 @@ impl PyPool {
             crate::json::format(&options.1)?,
         );
         let params = Converter::new(py)?.params(params)?;
-        Ok(crate::stream::PyStream {
-            core: self
-                .inner
-                .stream_json(sql, params, batch_rows, json, timeout)
-                .map_err(from_core)?,
-            as_dict: false,
-            close_timeout: self.close_timeout,
-            delivery: self.delivery.clone(),
-        })
+        let core = self
+            .inner
+            .stream_json(sql, params, batch_rows, json, timeout)
+            .map_err(from_core)?;
+        Ok(crate::stream::PyStream::new(
+            core,
+            false,
+            self.close_timeout,
+            self.delivery.clone(),
+        ))
     }
     #[pyo3(signature = (*, timeout=None))]
     fn snapshot(&self, timeout: Option<f64>) -> PyResult<Self> {
@@ -69,7 +91,9 @@ impl PyPool {
             delivery: self.delivery.clone(),
         })
     }
-    #[pyo3(signature = (sql, params=None, *, batch_rows=None, as_dict=false, timeout=None))]
+    #[pyo3(signature = (sql, params=None, *, batch_rows=None, as_dict=false, timeout=None, arrow=false))]
+    // Keep the existing Python row-stream keywords while selecting Arrow privately.
+    #[allow(clippy::too_many_arguments)]
     fn stream(
         &self,
         py: Python<'_>,
@@ -78,18 +102,14 @@ impl PyPool {
         batch_rows: Option<u32>,
         as_dict: bool,
         timeout: Option<f64>,
+        arrow: bool,
     ) -> PyResult<crate::stream::PyStream> {
-        self.inner.stats().map_err(from_core)?;
-        let params = Converter::new(py)?.params(params)?;
-        Ok(crate::stream::PyStream {
-            core: self
-                .inner
-                .stream(sql, params, batch_rows, as_dict, timeout)
-                .map_err(from_core)?,
-            as_dict,
-            close_timeout: self.close_timeout,
-            delivery: self.delivery.clone(),
-        })
+        let format = if arrow {
+            crate::stream::Format::Arrow
+        } else {
+            crate::stream::Format::Rows(as_dict)
+        };
+        crate::stream::create(py, self, sql, params, batch_rows, timeout, format)
     }
     #[new]
     fn new(config: &PyConfig, client_path: PathBuf) -> Self {

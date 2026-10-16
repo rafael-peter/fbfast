@@ -1,0 +1,66 @@
+[
+  {
+    "round": 0,
+    "case": "narrow100",
+    "format": "tuples",
+    "fetch_size": 5000,
+    "adapter": "fbfast",
+    "phase": "measured",
+    "seconds": 0.0014827909908490255,
+    "client_cpu_seconds": 0.00033900000000000596,
+    "process_peak_before_validation_bytes": 32849920,
+    "import_seconds": 0.12492079200455919,
+    "attach_prepare_seconds": 0.1451783329976024,
+    "stages": {
+      "stages": "native pipeline includes cleanup; not instrumented separately"
+    },
+    "build_id": "c1555f90c7d1b5dcb34e19e83ccb174ceb487bf6da3aec2dab2fc4635104a1b1",
+    "correctness": {
+      "phase": "validated",
+      "rows": 100,
+      "sha256": "08d7abaaaa1ec99301fedc9d4957d31ad417882977c23c0b0a26b6cedbf6ef9e"
+    },
+    "sampled_peak_rss_bytes": 32849920,
+    "rss_before_query_bytes": 32833536,
+    "rss_at_result_bytes": 32849920,
+    "rss_sample_count": 2,
+    "rss_interval_seconds": 0.005,
+    "stderr_bytes": 0,
+    "server_cpu_seconds": 0.008098,
+    "server_counter_interval_seconds": 0.0332498750067316,
+    "server_before": {
+      "cpu_usec": 9602988,
+      "memory_current_bytes": 179892224,
+      "memory_lifetime_peak_bytes": 198758400
+    },
+    "server_after": {
+      "cpu_usec": 9611086,
+      "memory_current_bytes": 180731904,
+      "memory_lifetime_peak_bytes": 198758400
+    }
+  },
+  {
+    "round": 0,
+    "case": "narrow100",
+    "format": "tuples",
+    "fetch_size": 5000,
+    "adapter": "firebird-driver",
+    "error": "Worker expected ready; received {'phase': 'error', 'error_type': 'AttributeError', 'detail': \"'NoneType' object has no attribute 'rollback'\", 'frames': [{'file': 'comparison_worker.py', 'line': 86, 'function': '<module>'}, {'file': 'comparison_worker.py', 'line': 47, 'function': 'main'}, {'file': 'comparison.py', 'line': 81, 'function': '__init__'}, {'file': 'core.py', 'line': 2056, 'function': 'rollback'}, {'file': 'core.py', 'line': 2716, 'function': 'rollback'}]}"
+  },
+  {
+    "round": 0,
+    "case": "narrow100",
+    "format": "tuples",
+    "fetch_size": 5000,
+    "adapter": "firebird-driver-reset",
+    "error": "Worker expected ready; received {'phase': 'error', 'error_type': 'AttributeError', 'detail': \"'NoneType' object has no attribute 'rollback'\", 'frames': [{'file': 'comparison_worker.py', 'line': 86, 'function': '<module>'}, {'file': 'comparison_worker.py', 'line': 47, 'function': 'main'}, {'file': 'comparison.py', 'line': 81, 'function': '__init__'}, {'file': 'core.py', 'line': 2056, 'function': 'rollback'}, {'file': 'core.py', 'line': 2716, 'function': 'rollback'}]}"
+  },
+  {
+    "round": 0,
+    "case": "narrow100",
+    "format": "tuples",
+    "fetch_size": 5000,
+    "adapter": "fdb",
+    "error": "Worker expected ready; received {'phase': 'error', 'error_type': 'DatabaseError', 'detail': \"('Error while starting transaction:\\\\n- SQLCODE: -904\\\\n- invalid database handle (no active connection)', -904, 335544324)\", 'frames': [{'file': 'comparison_worker.py', 'line': 86, 'function': '<module>'}, {'file': 'comparison_worker.py', 'line': 47, 'function': 'main'}, {'file': 'comparison.py', 'line': 72, 'function': '__init__'}, {'file': 'fbcore.py', 'line': 3692, 'function': 'execute'}, {'file': 'fbcore.py', 'line': 4173, 'function': 'begin'}]}"
+  }
+]

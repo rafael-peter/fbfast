@@ -9,6 +9,12 @@ use std::{
 };
 
 pub(super) enum Work {
+    Arrow {
+        sql: String,
+        params: Vec<Value>,
+        mode: crate::sinks::arrow::ArrowMode,
+        timeout: Option<f64>,
+    },
     Snapshot {
         scope: Arc<super::session_scope::Scope>,
         requests: flume::Receiver<Job>,
@@ -19,11 +25,7 @@ pub(super) enum Work {
         sql: String,
         params: Vec<Value>,
         batch_rows: u32,
-        unique_names: bool,
-        json: Option<(
-            crate::sinks::json::JsonOptions,
-            crate::sinks::json::JsonFormat,
-        )>,
+        format: super::stream::StreamFormat,
         timeout: Option<f64>,
         producer: super::stream_worker::Producer,
     },
@@ -58,6 +60,7 @@ impl Work {
     pub fn timeout(&self) -> Option<f64> {
         match self {
             Self::Rows { timeout, .. }
+            | Self::Arrow { timeout, .. }
             | Self::Json { timeout, .. }
             | Self::Snapshot { timeout, .. }
             | Self::Stream { timeout, .. }

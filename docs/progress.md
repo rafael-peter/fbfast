@@ -1,26 +1,103 @@
 # Evidência de implementação
 
-O objetivo continua sendo todo o `plano_fbfast_final.md`, P0 a P6. Este registro
-não substitui nem reduz os critérios originais, salvo os ajustes expressamente
-pedidos pelo usuário: distribuição principal por uv/pip e remoção do limite
-total de bytes, documentados nas decisões 0004 e 0009.
+O autor revisou o escopo em 15/10/2026: a API atual atende seu uso e a entrega
+ativa é distribuição por SO e integração PyPI. P5 e a matriz extensa de métricas/
+benchmarks ficam como backlog, conforme `docs/decisions/0018-release-scope.md`.
+As fases P0–P6 abaixo registram o estado histórico da especificação. Este registro
+preserva o histórico e incorpora os ajustes expressamente pedidos pelo usuário:
+distribuição uv/pip, remoção do limite total de bytes e foco atual em release,
+documentados nas decisões 0004, 0009 e 0018.
+
+Entrega de distribuição em andamento:
+
+- `.github/workflows/build-wheels.yml`: 20 wheels (macOS arm64/x86_64, Linux
+  aarch64/x86_64, Windows x86_64; CPython 3.11–3.14 com GIL), mais sdist.
+- `.github/workflows/release.yml`: tag deve coincidir com versão; todos os builds
+  e smokes devem passar; gate confere matriz completa e hashes antes de PyPI OIDC.
+- `actionlint 1.7.12` passou. Nenhum workflow remoto, commit/push, tag ou upload
+  foi executado. Trusted Publisher da conta ainda precisa ser configurado.
+- O environment `pypi` foi criado e consultado pela API GitHub em
+  `rafael-peter/fbfast`, sem regras opcionais de proteção. Isso prepara o destino
+  do job de publicação; não configura o Trusted Publisher na conta PyPI.
+- Wheel final desta revisão em macOS arm64/CPython 3.14, build
+  `2a3b6ed4de16f11c877af34ec279d832596b03db461bf8456f541e8989c3e2f6`,
+  passou por inventário/relocação, 22 testes de empacotamento/config/guards e smoke
+  CI real em servidor descartável do SDK extraído. Instalações uv de wheel e Git
+  temporário produziram o mesmo build ID e passaram com/sem extras Arrow/Polars.
+  Clippy, fmt, ruff, diff-check e actionlint passaram. Logs `.tools/release-*`.
+- A mesma revisão passou também em macOS arm64/CPython 3.11.17, 3.12.11 e
+  3.13.16: build release, inventário/relocação em processo isolado, instalação
+  uv do wheel e smoke CI real com runtime embarcado. Build IDs, respectivamente:
+  `5715b68bcc5088660b597549af9857e9f07cd1346e5c3adf66885b2afea59d55`,
+  `bdbfdb8047ca74cc85a989e9f34b2313aa4193008b8e3d3ba6f837f026ecd686` e
+  `df1850ce4b0d1a9c133d39d385bebf32d07821e12f166ed8a37c3b6abb44acc4`.
+  Logs `.tools/macos-cp311.log`, `.tools/macos-cp312.log` e
+  `.tools/macos-cp313.log`. Isso completa a matriz local macOS arm64 3.11–3.14;
+  execução remota dos workflows continua pendente.
+- Wheel final desta revisão em Linux aarch64/CPython 3.14, build
+  `1c25d36de7d3cd3cfea17c192be771277030f7120d0c03b1db9388e8b51729f1`,
+  compilou e passou por auditwheel manylinux 2.28, inventário/relocação, instalação
+  e smoke real (escalares, timezone/ICU, JSON, Arrow/Polars, streams sync/async e
+  TPB efetivo). Log `.tools/linux-release-final.log`. Windows e variantes x86_64 aguardam
+  execução de seus próprios jobs; não estão sendo chamados de homologados.
+- Linux aarch64/CPython 3.11, 3.12 e 3.13 também passaram pelo build release,
+  auditwheel manylinux 2.28, inventário/relocação, instalação pip e smoke CI real.
+  Build IDs, respectivamente:
+  `9f36abada5e076fe4b1a7ba81be46cf26580a31e1796d3dc590c3c1eadb3400f`,
+  `b5456b34b4332bafbf8e01510bb92eced4c0228605bc108a4c85f6a5d57ba490` e
+  `1d705dc1ffeb768d6b1223c268c321f91a6df2790113f86587915eeab269aa7a`.
+  Logs `.tools/linux-cp311.log`, `.tools/linux-cp312.log` e
+  `.tools/linux-cp313.log`. A matriz ARM64 local está verificada em ambos os SOs
+  para os quatro Pythons; ainda não representa uma execução do GitHub Actions.
+- O comando CI `cargo test -p fbfast-core -p fbfast-native --lib --tests` passou
+  no mesmo container Linux aarch64: 34 testes executados, zero falhas e 31 testes
+  de integração opt-in ignorados, conforme esperado por esse comando. Log
+  `.tools/linux-unit-ci.log`. Os smokes reais dos wheels são evidência separada.
+  `twine check` passou também nos três wheels Linux adicionais.
+- `uv build --sdist` passou; o arquivo contém helpers de todas as plataformas,
+  registry dos SDKs e stubs. O grafo de licenças Rust do target Windows também foi
+  coletado com sucesso, sem alegar que isso equivale a executar o binário Windows.
+  `twine check` passou nos dois wheels e no sdist. Consulta ao PyPI retornou 404
+  para `fbfast`; não havia projeto publicado na data da verificação. Cadastro
+  de pending Trusted Publisher segue como ação da conta do autor.
+
+A rodada comparativa já iniciada terminou com **180 amostras válidas/zero erros**:
+`benchmarks/results/20261015T175028Z-comparison/`. Há fontes congelados, manifesto,
+hashes, planos, JSON/CSV e relatório; 9 testes do oráculo passaram também com `-O`.
+Para 100 mil linhas/2 inteiros, medianas fbfast vs firebird-driver ajustado:
+tuplas 0,5403/0,5157 s; JSON 0,5297/0,5482 s; Arrow 0,5290/0,5344 s;
+Polars 0,5367/0,5394 s. RSS JSON 36,5/75,6 MiB, Arrow 47,8/77,0 MiB,
+Polars 61,6/93,5 MiB. Não houve ganho 2–5x de tempo nesses workloads; o probe C++
+equivalente de leitura bruta levou 0,5402 s/100 mil e 5,3172 s/1 milhão, apontando
+domínio do custo servidor/fetch. Ele não produz os mesmos objetos finais.
+FDB 2.0.4 original falhou na chamada variádica em Apple arm64; `fdb-arm64` identifica
+explicitamente o adaptador com correção de ABI, sem alterar o pacote instalado.
+O preflight `20261015T174237Z` foi marcado como excluído de aceitação porque o
+harness mudou durante a execução; a rodada final congela fontes em `harness.zip`.
+Novos benchmarks e extração paralela não bloqueiam a distribuição solicitada.
 
 | Fase | Estado | Evidência exigida / restante |
 |---|---|---|
 | P0 | Verificada no alvo local | Release, runtime, manifesto, hashes, cópia externa e instalação uv por wheel/Git local; repositório público existente, revisão remota atual não validada como entrega final |
-| P1 | Parcial | Attach/TPB/prepare/describe/bind/fetch/cleanup e cancel independente Rust+C++ reais, tipos escalares, cache e JSON; faltam sinks analíticos e baselines com outros drivers |
+| P1 | Parcial | Attach/TPB/prepare/describe/bind/fetch/cleanup e cancel independente Rust+C++ reais, tipos escalares, cache, JSON e Arrow materializados/streaming, Polars materializado; faltam baselines com outros drivers |
 | P2 | Parcial | Pool de workers, fila limitada, APIs sync/stream, explain e política lexical+TPB; faltam matriz de tipos e homologação completa de lifecycle |
 | P3 | Parcial | API async e sync, snapshot público, pools nomeadas, HTTP com linhas/JSON nativo, stats básicos, fila/timeout, cancel, sinais, loops e fork; faltam métricas de duração e maior homologação de lifecycle |
-| P4 | Parcial | JSON nativo materializado/streaming, BLOBs transacionais e probe interno JSON medido; faltam Arrow/Polars, matriz completa de tipos, ownership analítico e benchmarks com outros drivers |
+| P4 | Parcial | JSON e Arrow nativos materializados/streaming, Polars materializado, BLOBs transacionais, DECFLOAT exato, tipos temporais com fuso e probe interno JSON medido; faltam matriz completa de charsets/capacidades, RSS e benchmarks com outros drivers |
 | P5 | Pendente | Partições restritas, reserva de grupo, snapshot comum e equivalência |
 | P6 | Pendente | Artefato final, consumidor real quando disponível e auditoria completa da seção 20 |
 
 Validações executadas no estágio atual:
 
-- 25 testes Rust unitários/propriedades: config, SQL, versão, precisão/limites,
+- 34 testes Rust unitários/propriedades: config, SQL, versão, precisão/limites,
   fila FIFO limitada, remoção por cancelamento, retenção de slot ocupado e
-  janelas de concorrência da invalidação de cache, precisão JSON e datas extremas.
-- 30 testes de integração Rust/C++ no Firebird 5.0.3 descartável: TPB efetivo,
+  janelas de concorrência da invalidação de cache, precisão JSON, datas extremas
+  e parsing/reescala decimal exata com coeficientes INT128 e zeros redundantes.
+  Incluem fechamento de snapshot com permit de entrega retido e cancelamento/
+  timeout pendente, além de prazo expirado antes do polling do worker.
+  Incluem bytes IEEE independentes de FLOAT/DOUBLE e ownership do C Stream
+  Arrow: release único com/sem consumo e lote válido depois de destruir o leitor.
+  O C Array também conserva a referência ao buffer e a libera quando abandonado.
+- 31 testes de integração Rust/C++ no Firebird 5.0.3 descartável: TPB efetivo,
   bind, status, ownership, reset/cache, precisão, role, limites, cleanup,
   cancel real por geração, deadline autônomo, FIFO/teto, panic do worker,
   handshake efetivo, reposição de min_idle, lifetime e backoff. Incluem streams
@@ -28,9 +105,11 @@ Validações executadas no estágio atual:
   entre consultas, streams e commit concorrente em outra conexão.
   JSON confere por MON$TRANSACTIONS que `]` só é entregue depois de fechar a
   transação; parada/erro do consumer não fecha artificialmente um array parcial.
-- 18 testes Python de empacotamento/config por cópia externa, incluindo resolução
-  automática no construtor e remoção de max_result_bytes.
-- 146 testes Python reais: escalares/Decimal/INT128/datas, erros, aliases,
+  O codec temporal testa os 1.681 offsets de minuto entre -14h e +14h, nos
+  limites do relógio, além de largura de buffer, padding e zona inválida.
+- 19 testes Python de empacotamento/config por cópia externa, incluindo resolução
+  automática no construtor, remoção de max_result_bytes e licenças Arrow do target.
+- 252 testes Python reais: escalares/Decimal/INT128/datas, erros, aliases,
   explain parametrizado, cleanup, role, destrutor após fork e 96 consultas
   concorrentes com teto de 3 attachments. Incluem Ctrl+C, prazo durante conversão
   Python, timeout nativo, close durante attach pendente e seis subprocessos
@@ -65,6 +144,29 @@ Validações executadas no estágio atual:
   consultas/streams/JSON/snapshots sync/async, retenção após close, cancelamento,
   deadline e heartbeat. O Rust também interrompe entre leituras reais de BLOB
   para provar cleanup e reutilização sem depender de cancelamento do servidor.
+- 29 casos Python de DECFLOAT(16/34): precisão e extremos, subnormais, NULL,
+  zero negativo, NaN/sNaN com payload e sinal, bind exato e rejeição de perda,
+  regressão para NUMERIC fixo, JSON sem Decimal intermediário, streams e snapshots
+  sync/async. O contexto decimal Python reduzido não arredonda os valores lidos.
+- 23 casos Python de TIME/TIMESTAMP WITH TIME ZONE: UTC, offset/região, fold e
+  gaps de DST, mudanças de meia hora, datas extremas, NULL/vazio, bind, JSON,
+  streams/snapshots sync/async e retenção após fechar pool. TimeWithZone é imutável.
+  Regras Python ausentes/divergentes falham em linhas e não impedem JSON UTC/zona.
+  Cinquenta mil pares de valores temporais exercitam responsividade na conversão.
+- 30 casos Arrow/Polars cobrem schemas vazios/NULL, precisão e tipos, fusos,
+  BLOBs/charsets, aliases/limites, capsules, buffers retidos depois de fechar pool,
+  snapshots/pools nomeadas, adaptação off-loop, cancelamento e deadlines.
+  PyArrow 26.0.0 e Polars 2.0.0 recebem buffers INTEGER com endereços idênticos
+  aos exportados, em múltiplos chunks. Schema alterado/reordenado é rejeitado.
+  Dois casos adicionais verificam FLOAT/DOUBLE reais em linhas, JSON, Arrow e
+  Polars, incluindo bind, extremos, subnormais, zeros assinados e não finitos.
+- 22 casos de streaming Arrow verificam C Array/C Stream, schema vazio/NULL,
+  igualdade de tipos/metadados com a materialização, demanda/prefetch limitado,
+  consumo exclusivo, capsules descartadas/consumidas, retenção após close,
+  snapshots/atalhos, cancel async, idle timeout, shutdown limitado, fechamento
+  explícito durante leitura externa, fork e dois subprocessos de interrupção.
+  Um milhão de linhas em async streaming verifica responsividade sem reter todos
+  os lotes. O close explícito interrompe o leitor externo e espera seu cleanup.
 - Cache coordenado sync/async: dois attachments aquecidos, invalidação em ambos,
   coalescência, timeout e cancelamento sem interromper o cursor de outro chamador.
 - Async usa o mesmo scheduler e ponte PyO3 consolidada; testa fila cheia,
@@ -73,8 +175,14 @@ Validações executadas no estágio atual:
 - `uv add` de wheel e de commit em Git temporário local: ambos com o mesmo
   build_id, carregamento do runtime interno, consulta real e MON$ comprovando
   READ ONLY=1 e READ CONSISTENCY=4. Também validam init/get/close e consultas pelos
-  atalhos de pool nomeada, fetch_json, stream_json e BLOBs reais. Projetos/locks são
+  atalhos de pool nomeada, fetch_json, stream_json, BLOBs, DECFLOAT e tipos com fuso reais. Projetos/locks são
   independentes do checkout.
+  Em ambos os consumidores, Polars foi instalado/testado antes de PyArrow,
+  com ausência de PyArrow conferida no processo. Depois, PyArrow foi instalado
+  separadamente e validou os mesmos dados e o domínio INT128 integral.
+  Antes de instalar os dois extras, ambos os consumidores validaram ArrowBatch,
+  ArrowSchema, capsules e streams sync/async. Depois validaram C Stream diretamente
+  em Polars (ainda sem PyArrow) e em PyArrow, mantendo o mesmo build_id.
 - sdist criado com backend/scripts/fontes nativos e sem `.tools`, `.env` ou
   `target`; instalação do sdist ainda não testada separadamente.
 - fmt, clippy com warnings negados, ruff, mypy e módulos/dependências passaram.
@@ -83,6 +191,10 @@ Validações executadas no estágio atual:
   inválidos exercitados e de max_result_bytes. Probe e evidência em `.tools/typing/`.
 - Probe consumidor mypy: retorno bytes de JSON em pool/snapshot/atalhos e ambos
   os context managers; rejeita as seis opções literais inválidas exercitadas.
+  O probe analítico confere DataFrame em seis combinações sync/async de pool,
+  snapshot e atalhos; rejeita unsupported='ignore' em pool e atalho.
+  O probe de streaming confere ArrowStream/AsyncArrowStream, ArrowBatch e
+  ArrowSchema; rejeita await no context manager e as_dict em stream_arrow.
 
 O header oficial C++ emite warning de parâmetro não usado. O teste intencional
 de uso indevido após fork gera DeprecationWarning do CPython; apenas verifica
@@ -103,14 +215,20 @@ ao mesmo worker e aos mesmos conversores, conforme `decisions/0010-public-snapsh
 Pools nomeadas e a evidência HTTP inicial estão em `decisions/0011-named-pools.md`.
 JSON e a extensão da matriz HTTP estão em `decisions/0012-native-json.md`.
 BLOBs e os limites do cancelamento nativo estão em `decisions/0013-transactional-blobs.md`.
+DECFLOAT e a validação exata no bind estão em `decisions/0014-exact-decfloat.md`.
+Tipos temporais com fuso e a representação UTC/zona estão em `decisions/0015-time-zones.md`.
+Arrow/Polars materializados, ownership e a correção de FLOAT/DOUBLE estão em
+`decisions/0016-arrow-materialization.md`.
+Streaming Arrow e os contratos de encerramento/exportação estão em
+`decisions/0017-arrow-streams.md`.
 Ainda faltam mais cenários de
 conexão interrompida e métricas de durações. A fixture padrão negociou criptografia,
 mas não compressão, mesmo quando solicitada; a matriz de capacidades segue aberta.
-Não há DECFLOAT ou tipos SQL com timezone, e o executor atual exige conexão UTF8.
+O executor atual exige conexão UTF8; a matriz de charsets ainda está incompleta.
 BLOBs conhecidos podem ser transliterados pelo cliente; inline/cache de BLOB
 ainda não têm negociação/ganho medidos contra outro driver.
 Os critérios restantes de
-P3–P6 continuam abertos, incluindo sinks analíticos e benchmarks equivalentes.
+P3–P6 continuam abertos, incluindo métricas, RSS, extração paralela e benchmarks equivalentes.
 
 Cancelamento e política de sinais estão descritos em
 `decisions/0005-cancellation-signals.md`. O probe de dez amostras no build anterior
@@ -122,24 +240,72 @@ comparação de desempenho com outros drivers. Amostras em
 `benchmarks/results/20261015T121644Z-cancel.json`.
 
 No checkpoint atual, o heartbeat de um milhão de tuplas teve máximo de
-10,854 ms em execução isolada (2.804 amostras; 281 durante conversão Python;
-maior pausa de GC medida: 9,046 ms). O stream de um milhão de tuplas teve máximo
-de 9,096 ms, com 547 amostras durante materialização. JSON materializado teve
-máximo de 10,460 ms para um milhão de linhas (17.786.001 bytes). BLOBs grandes
-de texto/binário tiveram máximo de 7,506 ms. Esses números verificam
+3,627 ms em execução isolada (2.823 amostras; 279 durante conversão Python;
+maior pausa de GC medida: 0,289 ms). O stream de um milhão de tuplas teve máximo
+de 34,833 ms, com 544 amostras durante materialização. JSON materializado teve
+máximo de 7,294 ms para um milhão de linhas (17.786.001 bytes). BLOBs grandes
+de texto/binário tiveram máximo de 7,189 ms. Cinquenta mil pares temporais com
+fuso tiveram máximo de 34,838 ms, com 41 amostras durante materialização.
+Um milhão de linhas em Arrow teve máximo de 5,336 ms e adaptação final de
+2,102 ms (2 ticks durante adaptação); Polars teve máximo de 5,625 ms e adaptação
+de 2,402 ms (2 ticks durante adaptação). Ambos conservaram 2.000 lotes nativos;
+a thread de adaptação foi conferida como distinta da thread do loop. Arrow em
+async streaming teve máximo de 2,107 ms para um milhão de linhas, conservando
+somente o primeiro lote no consumidor. Esses números verificam
 responsividade local, sem equivaler a um benchmark comparativo de throughput.
 Uma validação concorrente anterior falhou com pico de 269,345 ms; a causa não
 foi isolada. A fase de responsividade sob carga controlada continua aberta,
 conforme `decisions/0006-async-delivery.md`, sem aumento do limite do teste.
 
-Checkpoint atual: build `fb2b5129d53ad74dc9039b27c2465f1228d712315ebf9835d27386a2737de647`,
+Checkpoint atual: build `c1555f90c7d1b5dcb34e19e83ccb174ceb487bf6da3aec2dab2fc4635104a1b1`,
 macOS arm64, CPython 3.14, release. Logs locais em `.tools/{unit,integration,
 python-integration,packaging,uv-install,verify,clippy}.log`.
 
-Os 146 testes de integração Python, 18 de empacotamento, verificador de inventário
-e os consumidores uv por wheel/Git local passaram neste artefato. Os 25 testes
-unitários/propriedades e 30 integrações Rust/C++ passaram no código correspondente.
-O probe uv confirmou mesmo build_id e BLOB/JSON real em ambos os consumidores.
+Os 252 testes de integração Python (95,83 s), 19 de empacotamento, verificador de inventário
+e os consumidores uv por wheel/Git local passaram neste artefato. Os 34 testes
+unitários/propriedades e 31 integrações Rust/C++ passaram no código correspondente.
+O probe uv confirmou mesmo build_id e BLOB/JSON/DECFLOAT/fusos/Arrow/Polars reais
+em ambos os consumidores, incluindo streaming sem extras e C Stream externo. A fixture descartável foi usada; nenhum banco
+operacional foi alterado.
+
+O checkpoint analítico materializado anterior foi
+`480c7046ffb41bb7c36858aef4f0b7b1a2664eb20116202ae52e98933ee74391`.
+Na primeira rodada de streaming, um teste supôs cancelamento imediato por
+Pool.close, e o harness encerrou seu processo após 90 s. A fixture foi recriada.
+A repetição verificou a política existente de shutdown com prazo e a nova
+interrupção de leitura externa por ArrowStream.close, conforme decisão 0017.
+
+Na primeira rodada analítica, os valores SQL FLOAT/DOUBLE incorretos revelaram
+a inversão dos códigos 482/480 no decoder/bind anteriores. Os tipos e larguras
+foram corrigidos com referência ao header oficial e regressões independentes.
+O teste de timeout Polars também passou a explicitar o fallback para o SUM
+INT128, pois o default corretamente rejeita Decimal256 antes do fetch. O teste
+de recuperação permite 2 s para incluir o primeiro import dos extras; o teste
+de expiração continua com 50 ms, sem relaxar o prazo da operação testada.
+
+O checkpoint de fusos anterior foi
+`b697fb4b9bae3cd92aa1237cb07a2b8470450373ae867f9e307c02b1588e33f1`.
+
+O checkpoint DECFLOAT anterior foi
+`9d12a03edb83963942e0900144403461638f6778124411454c64d611fd8df1b5`.
+Na etapa de fusos, a primeira suíte completa passou 197 testes e revelou uma
+corrida no fechamento de snapshot durante conversão Python. O worker podia
+observar closing antes de observar cancelamento. A ordem de publicação e a
+verificação de erros no fechamento foram corrigidas, com regressão determinística
+Rust e preservação do teste Python original. A execução final passou 198 casos
+em 71,62 s. Detalhes da correção na decisão 0010; log inicial preservado em
+`.tools/python-integration-timezone-initial.log`.
+
+O OrbStack parou durante a etapa, antes de uma execução nativa. Foi reativado e
+a fixture descartável foi recriada pelo harness; as validações finais acima
+foram realizadas depois dessa recuperação. Nenhum banco operacional foi alterado.
+
+O checkpoint BLOB anterior foi
+`fb2b5129d53ad74dc9039b27c2465f1228d712315ebf9835d27386a2737de647`.
+A rodada DECFLOAT passou os 175 casos em 67,99 s. Uma tentativa anterior parou
+na checagem do harness porque a fixture estava desligada; não chegou a executar
+testes. Após recriar o banco descartável, os 29 casos específicos e a suíte
+completa passaram, sem alteração do código para acomodar essa interrupção.
 
 Histórico: checkpoint funcional/benchmark JSON anterior foi
 `e55e27ca09843506dcd96cc01ee1fe115d1f9e845f4c440a4ed755aff8d7e06c`.

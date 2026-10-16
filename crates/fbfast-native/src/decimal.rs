@@ -21,11 +21,19 @@ impl Connection {
         // SAFETY: exact input width; bridge copies to aligned SDK storage and
         // receives the live output buffer's actual capacity.
         unsafe {
-            ffi::fbfast_decimal_text(self.handle.as_ptr(), kind, data.as_ptr(),
-                text.as_mut_ptr().cast(), text.len() as u32, &mut status);
+            ffi::fbfast_decimal_text(
+                self.handle.as_ptr(),
+                kind,
+                data.as_ptr(),
+                text.as_mut_ptr().cast(),
+                text.len() as u32,
+                &mut status,
+            );
         }
         status.check("decode_decfloat")?;
-        let length = text.iter().position(|b| *b == 0)
+        let length = text
+            .iter()
+            .position(|b| *b == 0)
             .ok_or(NativeError::InvalidInput("Unterminated DECFLOAT text"))?;
         String::from_utf8(text[..length].to_vec())
             .map_err(|_| NativeError::InvalidInput("Invalid DECFLOAT text encoding"))
@@ -35,12 +43,20 @@ impl Connection {
     pub fn decimal_bytes(&mut self, kind: u32, text: &str) -> Result<Vec<u8>, NativeError> {
         self.check()?;
         let mut data = vec![0u8; size(kind)?];
-        let text = CString::new(text)
-            .map_err(|_| NativeError::InvalidInput("Invalid DECFLOAT text"))?;
+        let text =
+            CString::new(text).map_err(|_| NativeError::InvalidInput("Invalid DECFLOAT text"))?;
         let mut status = ffi::RawStatus::default();
         // SAFETY: terminated input, exact writable output width; all data live
         // through the synchronous official utility call.
-        unsafe { ffi::fbfast_decimal_bytes(self.handle.as_ptr(), kind, text.as_ptr(), data.as_mut_ptr(), &mut status); }
+        unsafe {
+            ffi::fbfast_decimal_bytes(
+                self.handle.as_ptr(),
+                kind,
+                text.as_ptr(),
+                data.as_mut_ptr(),
+                &mut status,
+            );
+        }
         status.check("bind_decfloat")?;
         Ok(data)
     }

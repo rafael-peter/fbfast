@@ -12,7 +12,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from runtime_macos import sha256, verify_dependencies
+from runtime_common import sha256, verify_dependencies
 
 CONSUMER = """\
 import json
@@ -21,15 +21,18 @@ import sys
 import fbfast
 root = pathlib.Path(__file__).resolve().parent
 package = root / "fbfast"
+def inside(path):
+    path = pathlib.Path(path)
+    return any(p.exists() and p.samefile(package) for p in [path, *path.parents])
 if not pathlib.Path(fbfast.__file__).resolve().is_relative_to(package):
     raise RuntimeError("Import escaped the copied package")
 info = fbfast.build_info()
 if info["profile"] != "release":
     raise RuntimeError("Not a release artifact")
 client = fbfast.client_info()
-if not pathlib.Path(client["path"]).is_relative_to(package):
+if not inside(client["path"]):
     raise RuntimeError("Client library escaped the copied package")
-if not pathlib.Path(client["root"]).is_relative_to(package):
+if not inside(client["root"]):
     raise RuntimeError("Firebird resource root escaped the copied package")
 print(json.dumps({"build": info["build_id"], "client": client, "profile": info["profile"]}))
 """
@@ -64,7 +67,8 @@ def verify(package: Path) -> dict[str, object]:
                 ("PYTHON", "DYLD_", "LD_", "FB_", "FIREBIRD", "FBFAST_", "CARGO", "RUST")
             )
         }
-        env["PATH"] = "/usr/bin:/bin"  # No Rust, Homebrew, maturin, or pip on the search path.
+        env["PATH"] = (str(Path(os.environ["SystemRoot"]) / "System32") if os.name == "nt"
+                       else "/usr/bin:/bin")  # No build tools on the consumer search path.
         # -E -s -S remove interpreter env, user site and all site-packages. The
         # ordinary script directory is intentionally retained, as in the consumer.
         result = subprocess.run(

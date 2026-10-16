@@ -1,0 +1,233 @@
+[
+  {
+    "round": 0,
+    "case": "narrow100",
+    "format": "tuples",
+    "fetch_size": 5000,
+    "adapter": "fdb-arm64",
+    "phase": "measured",
+    "seconds": 0.0025276249943999574,
+    "client_cpu_seconds": 0.0005640000000000089,
+    "process_peak_before_validation_bytes": 34553856,
+    "import_seconds": 0.0261927090032259,
+    "attach_prepare_seconds": 0.2815804580022814,
+    "stages": {
+      "execute_seconds": 0.001055125001585111,
+      "fetch_decode_seconds": 0.0011302079947199672,
+      "cleanup_seconds": 0.00033083399466704577,
+      "conversion_seconds": 3.7910067476332188e-06,
+      "first_batch_seconds": 0.0021825829899171367,
+      "effective_batch_rows": 5000
+    },
+    "build_id": "c1555f90c7d1b5dcb34e19e83ccb174ceb487bf6da3aec2dab2fc4635104a1b1",
+    "correctness": {
+      "phase": "validated",
+      "rows": 100,
+      "sha256": "08d7abaaaa1ec99301fedc9d4957d31ad417882977c23c0b0a26b6cedbf6ef9e"
+    },
+    "sampled_peak_rss_bytes": 34553856,
+    "rss_before_query_bytes": 34553856,
+    "rss_at_result_bytes": 34553856,
+    "rss_sample_count": 2,
+    "rss_interval_seconds": 0.005,
+    "stderr_bytes": 0,
+    "server_cpu_seconds": 0.009974,
+    "server_counter_interval_seconds": 0.042673834002926014,
+    "server_before": {
+      "cpu_usec": 10220467,
+      "memory_current_bytes": 152428544,
+      "memory_lifetime_peak_bytes": 198758400
+    },
+    "server_after": {
+      "cpu_usec": 10230441,
+      "memory_current_bytes": 152866816,
+      "memory_lifetime_peak_bytes": 198758400
+    }
+  },
+  {
+    "round": 0,
+    "case": "narrow100",
+    "format": "dicts",
+    "fetch_size": 5000,
+    "adapter": "fdb-arm64",
+    "phase": "measured",
+    "seconds": 0.003832917005638592,
+    "client_cpu_seconds": 0.0012490000000000001,
+    "process_peak_before_validation_bytes": 34504704,
+    "import_seconds": 0.017780916998162866,
+    "attach_prepare_seconds": 0.045076999987941235,
+    "stages": {
+      "execute_seconds": 0.0007904170051915571,
+      "fetch_decode_seconds": 0.002265625007566996,
+      "cleanup_seconds": 0.0006983329949434847,
+      "conversion_seconds": 6.433400267269462e-05,
+      "first_batch_seconds": 0.0030482090078294277,
+      "effective_batch_rows": 5000
+    },
+    "build_id": "c1555f90c7d1b5dcb34e19e83ccb174ceb487bf6da3aec2dab2fc4635104a1b1",
+    "correctness": {
+      "phase": "validated",
+      "rows": 100,
+      "sha256": "08d7abaaaa1ec99301fedc9d4957d31ad417882977c23c0b0a26b6cedbf6ef9e"
+    },
+    "sampled_peak_rss_bytes": 34504704,
+    "rss_before_query_bytes": 34504704,
+    "rss_at_result_bytes": 34504704,
+    "rss_sample_count": 2,
+    "rss_interval_seconds": 0.005,
+    "stderr_bytes": 0,
+    "server_cpu_seconds": 0.010158,
+    "server_counter_interval_seconds": 0.04791483300505206,
+    "server_before": {
+      "cpu_usec": 10323052,
+      "memory_current_bytes": 153526272,
+      "memory_lifetime_peak_bytes": 198758400
+    },
+    "server_after": {
+      "cpu_usec": 10333210,
+      "memory_current_bytes": 153104384,
+      "memory_lifetime_peak_bytes": 198758400
+    }
+  },
+  {
+    "round": 0,
+    "case": "narrow100",
+    "format": "json",
+    "fetch_size": 5000,
+    "adapter": "fdb-arm64",
+    "phase": "measured",
+    "seconds": 0.001593708002474159,
+    "client_cpu_seconds": 0.0005450000000000038,
+    "process_peak_before_validation_bytes": 34406400,
+    "import_seconds": 0.01782087500032503,
+    "attach_prepare_seconds": 0.04001470800722018,
+    "stages": {
+      "execute_seconds": 0.0004455840098671615,
+      "fetch_decode_seconds": 0.0008774579910095781,
+      "cleanup_seconds": 0.0002187080099247396,
+      "conversion_seconds": 4.824998904950917e-05,
+      "first_batch_seconds": 0.0013212500052759424,
+      "effective_batch_rows": 5000
+    },
+    "build_id": "c1555f90c7d1b5dcb34e19e83ccb174ceb487bf6da3aec2dab2fc4635104a1b1",
+    "output_bytes": 2093,
+    "output_sha256": "f7611a6d38d653cfa3fcff3f81b36ff50781fc53175a2c5f9d9656f857562b0f",
+    "correctness": {
+      "phase": "validated",
+      "rows": 100,
+      "sha256": "08d7abaaaa1ec99301fedc9d4957d31ad417882977c23c0b0a26b6cedbf6ef9e"
+    },
+    "sampled_peak_rss_bytes": 34422784,
+    "rss_before_query_bytes": 34406400,
+    "rss_at_result_bytes": 34422784,
+    "rss_sample_count": 2,
+    "rss_interval_seconds": 0.005,
+    "stderr_bytes": 0,
+    "server_cpu_seconds": 0.007841,
+    "server_counter_interval_seconds": 0.03599150000081863,
+    "server_before": {
+      "cpu_usec": 10358484,
+      "memory_current_bytes": 153178112,
+      "memory_lifetime_peak_bytes": 198758400
+    },
+    "server_after": {
+      "cpu_usec": 10366325,
+      "memory_current_bytes": 153243648,
+      "memory_lifetime_peak_bytes": 198758400
+    }
+  },
+  {
+    "round": 0,
+    "case": "narrow100",
+    "format": "arrow",
+    "fetch_size": 5000,
+    "adapter": "fdb-arm64",
+    "phase": "measured",
+    "seconds": 0.0022069169936003163,
+    "client_cpu_seconds": 0.0008279999999999954,
+    "process_peak_before_validation_bytes": 51871744,
+    "import_seconds": 0.15229366699350066,
+    "attach_prepare_seconds": 0.03429633300402202,
+    "stages": {
+      "execute_seconds": 0.0004969169967807829,
+      "fetch_decode_seconds": 0.0012823330034734681,
+      "cleanup_seconds": 0.00031200000375974923,
+      "conversion_seconds": 0.0001066249969881028,
+      "first_batch_seconds": 0.0017770839913282543,
+      "effective_batch_rows": 5000
+    },
+    "build_id": "c1555f90c7d1b5dcb34e19e83ccb174ceb487bf6da3aec2dab2fc4635104a1b1",
+    "arrow_buffer_bytes": 800,
+    "schema": "ID: int32\nV: int32",
+    "correctness": {
+      "phase": "validated",
+      "rows": 100,
+      "sha256": "08d7abaaaa1ec99301fedc9d4957d31ad417882977c23c0b0a26b6cedbf6ef9e"
+    },
+    "sampled_peak_rss_bytes": 52101120,
+    "rss_before_query_bytes": 51855360,
+    "rss_at_result_bytes": 52101120,
+    "rss_sample_count": 2,
+    "rss_interval_seconds": 0.005,
+    "stderr_bytes": 0,
+    "server_cpu_seconds": 0.009687,
+    "server_counter_interval_seconds": 0.044679583006654866,
+    "server_before": {
+      "cpu_usec": 10390779,
+      "memory_current_bytes": 153157632,
+      "memory_lifetime_peak_bytes": 198758400
+    },
+    "server_after": {
+      "cpu_usec": 10400466,
+      "memory_current_bytes": 153513984,
+      "memory_lifetime_peak_bytes": 198758400
+    }
+  },
+  {
+    "round": 0,
+    "case": "narrow100",
+    "format": "polars",
+    "fetch_size": 5000,
+    "adapter": "fdb-arm64",
+    "phase": "measured",
+    "seconds": 0.0016212500049732625,
+    "client_cpu_seconds": 0.0005479999999999929,
+    "process_peak_before_validation_bytes": 65847296,
+    "import_seconds": 0.12019291700562462,
+    "attach_prepare_seconds": 0.0813912919984432,
+    "stages": {
+      "execute_seconds": 0.00043075000576209277,
+      "fetch_decode_seconds": 0.0008974169904831797,
+      "cleanup_seconds": 0.0002122919977409765,
+      "conversion_seconds": 7.537500641774386e-05,
+      "first_batch_seconds": 0.001326334007899277,
+      "effective_batch_rows": 5000
+    },
+    "build_id": "c1555f90c7d1b5dcb34e19e83ccb174ceb487bf6da3aec2dab2fc4635104a1b1",
+    "polars_estimated_bytes": 800,
+    "schema": "Schema({'ID': Int32, 'V': Int32})",
+    "correctness": {
+      "phase": "validated",
+      "rows": 100,
+      "sha256": "08d7abaaaa1ec99301fedc9d4957d31ad417882977c23c0b0a26b6cedbf6ef9e"
+    },
+    "sampled_peak_rss_bytes": 65945600,
+    "rss_before_query_bytes": 65847296,
+    "rss_at_result_bytes": 65945600,
+    "rss_sample_count": 2,
+    "rss_interval_seconds": 0.005,
+    "stderr_bytes": 0,
+    "server_cpu_seconds": 0.008289,
+    "server_counter_interval_seconds": 0.0359285829908913,
+    "server_before": {
+      "cpu_usec": 10422786,
+      "memory_current_bytes": 153579520,
+      "memory_lifetime_peak_bytes": 198758400
+    },
+    "server_after": {
+      "cpu_usec": 10431075,
+      "memory_current_bytes": 153497600,
+      "memory_lifetime_peak_bytes": 198758400
+    }
+  }
+]

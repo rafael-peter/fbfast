@@ -1,0 +1,6 @@
+firebird-driver==2.0.3
+fdb==2.0.4
+orjson==3.11.3
+psutil==7.1.0
+pyarrow==26.0.0
+polars==2.0.0

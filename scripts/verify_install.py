@@ -23,7 +23,9 @@ def verify(consumer: Path, env: dict[str, str], config: dict[str, object] | None
     if config:
         clean["FBFAST_ACCEPTANCE_CONFIG"] = json.dumps(config)
     code = """
-import json, pathlib, os, fbfast
+import asyncio, importlib.util, json, pathlib, os, fbfast
+from decimal import Decimal
+from datetime import datetime, time, timezone
 root = pathlib.Path(fbfast.__file__).resolve().parent
 info = fbfast.client_info()
 assert pathlib.Path(info['path']).is_relative_to(root)
@@ -44,12 +46,75 @@ if 'FBFAST_ACCEPTANCE_CONFIG' in os.environ:
         assert fbfast.fetch_one('SELECT TEXT_BLOB, BINARY_BLOB FROM FBFAST_TYPES WHERE ID=1') == ('texto em BLOB', bytes.fromhex('00ff80'))
         assert json.loads(fbfast.fetch_json('SELECT TEXT_BLOB FROM FBFAST_TYPES WHERE ID=1')) == [{'TEXT_BLOB': 'texto em BLOB'}]
         report['native_blobs'] = True
+        assert fbfast.fetch_val('SELECT CAST(? AS DECFLOAT(34)) FROM RDB$DATABASE', [Decimal('1.2300')]).as_tuple() == Decimal('1.2300').as_tuple()
+        report['native_decfloat'] = True
+        stamp, clock = fbfast.fetch_one('SELECT STAMP, CLOCK FROM FBFAST_ZONED WHERE ID=2')
+        assert stamp.astimezone(timezone.utc) == datetime(2024, 11, 3, 5, 30, tzinfo=timezone.utc)
+        assert stamp.tzinfo.key == 'America/New_York'
+        assert clock == fbfast.TimeWithZone(time(17), 'America/New_York')
+        returned = fbfast.fetch_val('SELECT CAST(? AS TIMESTAMP WITH TIME ZONE) FROM RDB$DATABASE', [stamp])
+        assert returned == stamp and returned.fold == stamp.fold
+        report['native_time_zones'] = True
+        assert importlib.util.find_spec('pyarrow') is None
+        assert importlib.util.find_spec('polars') is None
+        with fbfast.stream_arrow('SELECT ID FROM FBFAST_TYPES ORDER BY ID', batch_rows=1) as stream:
+            assert stream.schema.names == ['ID']
+            batches = list(stream)
+        assert [batch.num_rows for batch in batches] == [1, 1]
+        assert all(type(capsule).__name__ == 'PyCapsule' for capsule in batches[0].__arrow_c_array__())
+        async def arrow_batches():
+            async with pool.stream_arrow_async('SELECT ID FROM FBFAST_TYPES ORDER BY ID') as stream:
+                return [batch async for batch in stream]
+        assert sum(batch.num_rows for batch in asyncio.run(arrow_batches())) == 2
+        report['arrow_streams_without_extras'] = True
     finally:
         fbfast.close_pool_sync()
     assert pool.stats()['closed'] == 1
 print(json.dumps(report))
 """
     return json.loads(run([str(consumer / ".venv/bin/python"), "-E", "-s", "-c", code], consumer, clean))
+
+
+def verify_analytics(consumer: Path, env: dict[str, str], config: dict[str, object], uv: str) -> dict[str, object]:
+    """Install optional consumers separately, proving Polars works without PyArrow."""
+    clean = {key: value for key, value in env.items() if not key.startswith(("FB_", "FBFAST_", "FIREBIRD", "DYLD_", "PYTHON", "CARGO", "RUST"))}
+    clean["PATH"] = "/usr/bin:/bin"
+    clean["FBFAST_ACCEPTANCE_CONFIG"] = json.dumps(config)
+    code = """
+import importlib.util, json, os, fbfast
+from decimal import Decimal
+consumer = os.environ['FBFAST_ANALYTICAL_CONSUMER']
+if consumer == 'polars':
+    assert importlib.util.find_spec('pyarrow') is None
+with fbfast.Pool(fbfast.FirebirdConfig(**json.loads(os.environ['FBFAST_ACCEPTANCE_CONFIG']))) as pool:
+    if consumer == 'polars':
+        result = pool.fetch_polars('SELECT ID, AMOUNT, LABEL FROM FBFAST_TYPES ORDER BY ID')
+        assert result.to_dicts()[0] == dict(ID=1, AMOUNT=Decimal('-12345678.9012'), LABEL='Olá 日本語')
+        wide = pool.fetch_polars('SELECT WIDE_INTEGER FROM FBFAST_TYPES WHERE ID=1', unsupported='string')
+        assert wide[0, 0] == str(2**127 - 1)
+        import polars as pl
+        with pool.stream_arrow('SELECT ID FROM FBFAST_TYPES ORDER BY ID', batch_rows=1) as stream:
+            streamed = pl.from_arrow(stream, rechunk=False).struct.unnest()
+        assert streamed['ID'].to_list() == [1, 2]
+    else:
+        result = pool.fetch_arrow('SELECT ID, AMOUNT, LABEL FROM FBFAST_TYPES ORDER BY ID')
+        assert result.to_pylist()[0] == dict(ID=1, AMOUNT=Decimal('-12345678.9012'), LABEL='Olá 日本語')
+        wide = pool.fetch_arrow('SELECT WIDE_INTEGER FROM FBFAST_TYPES WHERE ID=1')
+        assert wide[0][0].as_py() == Decimal(2**127 - 1)
+        import pyarrow as pa
+        with pool.stream_arrow('SELECT ID FROM FBFAST_TYPES ORDER BY ID', batch_rows=1) as stream:
+            streamed = pa.table(stream)
+        assert streamed[0].to_pylist() == [1, 2]
+    assert pool.fetch_val('SELECT CAST(1.25 AS DOUBLE PRECISION) FROM RDB$DATABASE') == 1.25
+assert len(result) == 2
+print(json.dumps({'consumer': consumer, 'build_id': fbfast.build_info()['build_id'], 'rows': len(result)}))
+"""
+    report = {}
+    for kind, dependency in (("polars", "polars>=2"), ("arrow", "pyarrow>=26")):
+        run([uv, "add", dependency], consumer, env)
+        clean["FBFAST_ANALYTICAL_CONSUMER"] = kind
+        report[kind] = json.loads(run([str(consumer / ".venv/bin/python"), "-E", "-s", "-c", code], consumer, clean))
+    return report
 
 
 def main() -> None:
@@ -86,6 +151,8 @@ def main() -> None:
             run([uv, "add", dependency], consumer, env)
             assert (consumer / "uv.lock").is_file()
             report[kind] = verify(consumer, env, config)
+            if config:
+                report[kind]["analytics"] = verify_analytics(consumer, env, config, uv)
     print(json.dumps(report, indent=2))
 
 

@@ -1,10 +1,13 @@
 # fbfast
 
 Biblioteca de leitura para Firebird 5, com core Rust e ponte para o cliente oficial.
-Implementação em andamento conforme `plano_fbfast_final.md`. Ainda não oferece
-a API completa de consultas; acompanhe a evidência por fase em `docs/progress.md`.
+Oferece pool, consultas sync/async, snapshots, streaming e saídas em linhas,
+JSON, Arrow e Polars. A entrega atual está focada na distribuição dessa API;
+extração paralela e outras evoluções do plano ficam para versões posteriores.
 
-Primeiro alvo: **macOS arm64, CPython 3.14 com GIL**. Outros alvos ainda não homologados.
+Wheels testados localmente em **macOS arm64 e Linux aarch64, CPython 3.14 com GIL**.
+A matriz CI cobre também Intel e Windows, com CPython 3.11–3.14. Consulte
+[evidências e limites de validação](docs/progress.md).
 
 ## Instalar com uv
 
@@ -31,7 +34,10 @@ pip install "fbfast @ git+https://github.com/rafael-peter/fbfast.git@COMMIT"
 ```
 
 Fixar um commit ou uma tag evita atualizar a biblioteca implicitamente a cada
-instalação. Releases com wheels permitirão instalar sem toolchain no consumidor.
+instalação. A publicação PyPI é automatizada por tag `v<versão>` após os testes
+dos wheels e a configuração do Trusted Publisher. O workflow ainda precisa ser
+executado no GitHub; não há versão PyPI publicada confirmada nesta entrega.
+Veja o [guia de release e configuração PyPI](docs/releasing.md).
 
 O backend PEP 517 inclui extensão, runtime, manifesto e licenças no mesmo wheel;
 não há cópia manual posterior. Git não torna o binário universal. Outros
@@ -243,20 +249,95 @@ por operação. Ctrl+C e timeout cancelam a consulta sem encerrar o cliente inte
 o attachment cancelado é descartado após cleanup. O prazo inclui a conversão
 para Python. Sinais e recuperação após cancel foram testados no alvo local.
 
-Ainda faltam Arrow/Polars, DECFLOAT/timezone e exportação paralela.
+Arrow/Polars materializados e streaming Arrow estão disponíveis; extração
+paralela ainda falta, além da homologação completa. O estado verificado fica
+em `docs/progress.md`.
 Em attach sem resposta ou partição
 de rede, o chamador pode retornar antes da chamada nativa; o slot permanece
 contado até o cleanup terminar. Fechar a pool também respeita um prazo para o
 chamador, sem prometer encerrar threads nativas presas.
 
 O consumidor precisa da mesma arquitetura, SO e ABI de Python. Um artefato de
-CPython 3.14 não serve para 3.15. Extras Arrow/Polars precisarão estar disponíveis
-no consumidor quando suas APIs forem implementadas.
+CPython 3.14 não serve para 3.15. Extras Arrow/Polars precisam estar disponíveis
+no consumidor quando essas saídas forem utilizadas.
 
 Para atualizar, pare os processos consumidores, atualize a dependência e reinicie.
 No modo copiável, substitua a pasta inteira. Não misture arquivos de builds
 diferentes nem substitua uma dylib carregada.
 Nenhum script publica ou faz upload de pacotes.
+
+## Arrow e Polars materializados
+
+Instale `fbfast[arrow]` para `fetch_arrow` (PyArrow >= 26), ou `fbfast[polars]`
+para `fetch_polars` (Polars >= 2). Polars recebe os buffers nativos diretamente
+pelo protocolo Arrow e não exige instalar PyArrow. O pacote básico continua
+importável sem nenhum dos dois extras.
+
+```python
+table = pool.fetch_arrow("SELECT ID, VALOR FROM MINHA_TABELA")
+frame = await pool.fetch_polars_async("SELECT ID, VALOR FROM MINHA_TABELA")
+```
+
+As variantes sync/async também existem em snapshots e nos atalhos de pools
+nomeadas. O Rust constrói as colunas sem uma lista intermediária de objetos
+Python. A conversão final assíncrona executa fora do event loop. O resultado
+completo permanece em memória e respeita `max_result_rows`.
+
+Arrow conserva tipos descritos, mesmo com resultado vazio ou primeiro valor
+NULL. Campos incluem metadados SQL (`fbfast.sql_type`, `scale`, `subtype`,
+`charset`, `storage_bytes`). A precisão decimal representa a capacidade do
+armazenamento descrito pelo cliente: INT64 usa até 19 dígitos e INT128, 39.
+INT128 e NUMERIC/DECIMAL armazenados em INT128 usam Decimal256, sem passar por
+float. DECFLOAT usa texto exato, inclusive sinal/coorte e valores especiais.
+TIME/TIMESTAMP WITH TIME ZONE usam structs com campos UTC e nome da zona.
+
+Polars usa `rechunk=False` e o schema recebido é conferido. Decimal256 falha
+antes do fetch por padrão; `unsupported="string"` permite explicitamente texto
+decimal exato nessas colunas. Outros tipos não homologados continuam gerando
+erro. Aliases duplicados exigem aliases SQL distintos. O resultado mantém os
+buffers vivos depois do fechamento da pool.
+
+## Streaming Arrow
+
+`stream_arrow` e `stream_arrow_async` entregam `ArrowBatch` sem exigir PyArrow
+ou Polars. Cada lote possui `num_rows`, `num_columns`, `nbytes` (memória dos
+arrays), `schema` e exportação `__arrow_c_array__`. `ArrowSchema` oferece `names`
+e `__arrow_c_schema__`; o schema está disponível logo após entrar no contexto,
+inclusive quando a consulta não retorna linhas.
+
+```python
+async with pool.stream_arrow_async("SELECT ID, VALOR FROM MINHA_TABELA", batch_rows=2000) as stream:
+    async for batch in stream:
+        processar_lote_arrow(batch)
+
+# Com o extra arrow instalado:
+import pyarrow as pa
+with pool.stream_arrow("SELECT ID, VALOR FROM MINHA_TABELA") as stream:
+    reader = pa.RecordBatchReader.from_stream(stream)
+    for batch in reader:
+        processar_lote_pyarrow(batch)
+```
+
+O C Stream é bloqueante e tem um único consumidor: depois de exportá-lo, não
+se pode exportar novamente nem iterar pelo ArrowStream Python. A versão async
+usa o scheduler para entregar lotes C Array e não exporta um C Stream bloqueante.
+`pa.record_batch(batch)` importa um ArrowBatch; cada exportação do lote cria
+novas capsules, cada uma consumível uma única vez.
+
+`batch_rows=None` usa `fetch_size`; `batch_bytes` limita o lote nativo, permitindo
+uma linha isolada maior que esse orçamento. BLOBs mantêm seu limite por célula.
+`max_result_rows` não se aplica ao streaming. O produtor só avança por demanda
+e pelo prefetch configurado. Além dos lotes produzidos, há o buffer de fetch e
+um builder reservado. Lotes retidos pelo consumidor permanecem válidos depois
+do fechamento do stream/pool e contam como memória do consumidor.
+
+Sair do contexto espera o cleanup até `close_timeout`. Fechar explicitamente
+ArrowStream durante uma leitura C Stream em outro thread cancela essa leitura
+e espera a limpeza. O consumidor estrangeiro recebe a exceção do seu próprio
+pacote, com o diagnóstico fbfast (tipo, fase, SQLSTATE e códigos nativos).
+Os handlers Python de sinais são respeitados durante a espera bloqueante.
+Fechar a pool segue a política geral de shutdown limitado por prazo: trabalho
+ativo continua contado até terminar ou ser cancelado pelo seu proprietário.
 
 ## JSON nativo
 
@@ -286,7 +367,8 @@ async with pool.stream_json_async(
 SMALLINT/INTEGER são números; NULL/bool têm seus equivalentes JSON. Texto mantém
 Unicode e escaping JSON. Datas e horários usam ISO 8601, sem offset inventado.
 BLOBs textuais seguem a política de charset; binários exigem `json_binary="base64"`.
-DECFLOAT e tipos SQL com timezone ainda geram erro de tipo não suportado.
+Tipos SQL com timezone preservam os campos UTC e zona em objetos JSON,
+conforme a seção de tipos temporais abaixo.
 
 `stream_json`/`stream_json_async` entregam chunks próprios, válidos após fechar o
 contexto. `format="ndjson"` preserva registros completos com newline; um registro
@@ -323,8 +405,9 @@ como alvo de DDL ou benchmark. O protótipo C++ é uma referência nativa separa
 seus números não representam o desempenho da API Python.
 
 `verify_install.py` cria dois consumidores uv e um Git temporário local, sem
-remoto, para provar instalação por wheel e por commit dos fontes. Nenhum script
-publica pacotes ou cria releases remotas.
+remoto, para provar instalação por wheel e por commit dos fontes. Esses comandos
+locais não publicam. A publicação é feita pelo workflow `release.yml` quando o
+autor envia uma tag de versão e todos os builds/testes passam.
 
 
 ## BLOBs
@@ -343,3 +426,62 @@ Streams com BLOBs entregam uma linha por lote nesta implementação; uma linha
 pode exceder `batch_bytes`, mas cada BLOB obedece ao seu limite. Os resultados
 retidos continuam válidos após fechar a pool. Nenhum handle preguiçoso é exposto.
 Parâmetros BLOB não são criados implicitamente para fazer bind.
+
+
+## DECFLOAT
+
+`DECFLOAT(16/34)` retorna `decimal.Decimal`, sem passar por float nem arredondar
+pelo contexto Decimal do Python. A conversão usa os utilitários oficiais do
+cliente. Mantém zeros com sinal, subnormais, infinitos, NaN e sNaN com payload.
+
+No bind, envie `Decimal` ou `int` para um parâmetro DECFLOAT. A biblioteca confere
+a conversão de volta e rejeita perda de precisão, overflow, underflow e perda de
+payload com `DataConversionError`, identificando o parâmetro sem imprimir seu
+valor. Zeros finais insignificantes podem mudar de expoente para caber na precisão,
+mas o valor não é arredondado. NUMERIC/DECIMAL fixos continuam rejeitando especiais
+e valores que não cabem exatamente na escala preparada.
+
+JSON usa strings para DECFLOAT finito por padrão; `json_decimals="number"`
+escreve números decimais exatos, inclusive expoentes grandes, cuja interpretação
+fica a cargo do consumidor. NaN e infinitos exigem `json_non_finite="null"`, mesmo
+quando `json_decimals="string"`. Streams e snapshots usam as mesmas regras.
+
+## Tipos temporais com fuso
+
+`TIMESTAMP WITH TIME ZONE` retorna `datetime` aware: offsets fixos usam
+`datetime.timezone`; regiões usam `zoneinfo.ZoneInfo`. A conversão conserva
+o instante UTC, o horário local e `fold` nas repetições de horário de verão.
+Se a zona estiver ausente no Python ou suas regras divergirem das do cliente
+Firebird, a leitura em linhas gera `DataConversionError`.
+
+`TIME WITH TIME ZONE` retorna `fbfast.TimeWithZone(utc_time, zone)`, imutável e
+hashable. `utc_time` é um `datetime.time` sem tzinfo que representa o horário UTC;
+`zone` é o nome da região ou offset. O objeto não inventa uma data para deduzir
+horário local. A própria semântica Firebird usa regras de 2020-01-01 para converter
+horários locais desse tipo no servidor.
+
+```python
+from datetime import datetime, time
+from zoneinfo import ZoneInfo
+from fbfast import TimeWithZone
+
+# fold=1 seleciona a segunda ocorrência desse horário em Nova York.
+stamp = datetime(2024, 11, 3, 1, 30, tzinfo=ZoneInfo("America/New_York"), fold=1)
+clock = TimeWithZone(time(17), "America/New_York")
+row = pool.fetch_one(
+    "SELECT CAST(? AS TIMESTAMP WITH TIME ZONE), CAST(? AS TIME WITH TIME ZONE) "
+    "FROM RDB$DATABASE", [stamp, clock],
+)
+```
+
+No bind, datetimes aware aceitam `ZoneInfo` com nome ou `datetime.timezone`.
+Horários locais inexistentes, UTC fora do domínio, offsets fixos fora de ±14h
+ou com segundos e perda de precisão temporal geram erro. A precisão é de
+100 microssegundos. `TimeWithZone.utc_time` exige time sem tzinfo e fold=0;
+um time aware comum não é adaptado implicitamente. Tipos SQL sem fuso continuam
+aceitando apenas valores sem fuso, sem aplicar `session_time_zone` a eles.
+
+JSON conserva `{"utc":"2024-11-03T06:30:00Z","zone":"America/New_York"}`
+para timestamp e `{"utc_time":"17:00:00","zone":"America/New_York"}` para
+horário. Esses caminhos não constroem objetos temporais Python nem dependem
+do banco de zonas do Python. Streams e snapshots têm o mesmo contrato.

@@ -23,6 +23,9 @@ flume = { version = "=0.11.1", default-features = false, features = ["async"] }
 cc = "=1.2.46"
 dotenvy = "=0.15.7"
 proptest = "=1.9.0"
+arrow-array = { version = "=60.0.0", features = ["ffi"] }
+arrow-buffer = "=60.0.0"
+arrow-schema = "=60.0.0"
 
 [profile.release]
 lto = "thin"

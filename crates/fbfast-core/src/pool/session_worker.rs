@@ -116,7 +116,7 @@ fn operations(
     };
     loop {
         if scope.closing.load(Ordering::Acquire) {
-            return Ok(());
+            return scope.close_result();
         }
         scope.check()?;
         scope.check_active()?;
@@ -140,7 +140,7 @@ fn operations(
         };
         if scope.closing.load(Ordering::Acquire) {
             let _ = job.reply.try_send(Err(super::session_scope::closed()));
-            return Ok(());
+            return scope.close_result();
         }
         if let Err(error) = scope.check() {
             let _ = job.reply.try_send(Err(error.clone()));

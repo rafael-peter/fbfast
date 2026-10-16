@@ -78,7 +78,23 @@ impl Client {
         };
         // SAFETY: explicit canonical path to an SDK-compatible client. The Library
         // is kept for process lifetime by CLIENT; no symbol can outlive it.
+        #[cfg(not(windows))]
         let library = unsafe { Library::new(&path) }.map_err(error)?;
+        #[cfg(windows)]
+        let library: Library = unsafe {
+            use libloading::os::windows::{
+                Library as WindowsLibrary, LOAD_LIBRARY_SEARCH_DEFAULT_DIRS,
+                LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR,
+            };
+            // Resolve bundled ICU/VC dependencies beside the explicit client;
+            // never depend on the working directory or a machine-wide PATH.
+            WindowsLibrary::load_with_flags(
+                &path,
+                LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS,
+            )
+        }
+        .map_err(error)?
+        .into();
         // SAFETY: stable Firebird C ABI; documented version string fits 256 bytes.
         let version_string = unsafe {
             let get_version = library

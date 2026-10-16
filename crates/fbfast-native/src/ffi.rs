@@ -67,7 +67,32 @@ impl Default for RawColumn {
     }
 }
 
+#[repr(C)]
+pub struct RawZoned {
+    pub utc_date: i32,
+    pub utc_time: u32,
+    pub local_date: i32,
+    pub local_time: u32,
+    pub zone: [u8; 128],
+}
+
 unsafe extern "C" {
+    pub fn fbfast_decode_zoned(
+        handle: *mut c_void,
+        kind: u32,
+        data: *const u8,
+        out: *mut RawZoned,
+        error: *mut RawStatus,
+    );
+    pub fn fbfast_encode_zoned(
+        handle: *mut c_void,
+        kind: u32,
+        date: i32,
+        time: u32,
+        zone: *const c_char,
+        out: *mut u8,
+        error: *mut RawStatus,
+    );
     pub fn fbfast_attach(
         master: *mut c_void,
         sqlstate: SqlStateFn,
@@ -155,8 +180,19 @@ unsafe extern "C" {
         error: *mut RawStatus,
     ) -> u32;
     pub fn fbfast_close_blob(handle: *mut c_void, error: *mut RawStatus);
-    pub fn fbfast_decimal_text(handle: *mut c_void, kind: u32, data: *const u8,
-        text: *mut c_char, capacity: u32, error: *mut RawStatus);
-    pub fn fbfast_decimal_bytes(handle: *mut c_void, kind: u32, text: *const c_char,
-        data: *mut u8, error: *mut RawStatus);
+    pub fn fbfast_decimal_text(
+        handle: *mut c_void,
+        kind: u32,
+        data: *const u8,
+        text: *mut c_char,
+        capacity: u32,
+        error: *mut RawStatus,
+    );
+    pub fn fbfast_decimal_bytes(
+        handle: *mut c_void,
+        kind: u32,
+        text: *const c_char,
+        data: *mut u8,
+        error: *mut RawStatus,
+    );
 }

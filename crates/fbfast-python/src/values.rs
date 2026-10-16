@@ -29,11 +29,15 @@ pub struct Converter<'py> {
     date: Bound<'py, PyAny>,
     time: Bound<'py, PyAny>,
     datetime: Bound<'py, PyAny>,
+    zoned_time: Bound<'py, PyAny>,
+    timestamp_input: Bound<'py, PyAny>,
+    timestamp_output: Bound<'py, PyAny>,
 }
 
 impl<'py> Converter<'py> {
     pub fn new(py: Python<'py>) -> PyResult<Self> {
         let datetime = py.import("datetime")?;
+        let temporal = py.import("fbfast.temporal")?;
         Ok(Self {
             budget: None,
             converted: Cell::new(0),
@@ -44,6 +48,9 @@ impl<'py> Converter<'py> {
             date: datetime.getattr("date")?,
             time: datetime.getattr("time")?,
             datetime: datetime.getattr("datetime")?,
+            zoned_time: temporal.getattr("TimeWithZone")?,
+            timestamp_input: temporal.getattr("_timestamp_parameter")?,
+            timestamp_output: temporal.getattr("_timestamp_from_native")?,
         })
     }
 
@@ -114,31 +121,26 @@ impl<'py> Converter<'py> {
             return Ok(Value::Bytes(value.extract()?));
         }
         if value.is_instance(&self.decimal)? {
-            if !value.call_method0("is_finite")?.extract::<bool>()? {
-                return Err(conversion(
-                    "Non-finite Decimal is not supported by fixed numeric binding",
-                ));
-            }
-            let tuple = value.call_method0("as_tuple")?;
-            let sign: u8 = tuple.getattr("sign")?.extract()?;
-            let digits: Vec<u8> = tuple.getattr("digits")?.extract()?;
-            let scale = tuple
-                .getattr("exponent")?
-                .extract::<i32>()
-                .map_err(|_| conversion("Decimal exponent exceeds native range"))?;
-            let mut text = if sign == 1 {
-                "-".to_owned()
-            } else {
-                String::new()
-            };
-            text.extend(digits.into_iter().map(|digit| char::from(b'0' + digit)));
-            let coefficient = text
-                .parse::<i128>()
-                .map_err(|_| conversion("Decimal coefficient exceeds signed INT128 range"))?;
-            return Ok(Value::Decimal { coefficient, scale });
+            // Preserve exponent, signed zero and special-value payloads. The
+            // prepared SQL type determines exact range/scale validation in core.
+            return Ok(Value::DecFloat(value.str()?.extract()?));
         }
         if value.is_instance(&self.datetime)? {
-            naive(value)?;
+            if !value.getattr("tzinfo")?.is_none() {
+                let (utc_date, utc_time, local_date, local_time, zone) = self
+                    .timestamp_input
+                    .call1((value,))?
+                    .extract::<(i32, u32, i32, u32, String)>()?;
+                return Ok(Value::TimestampTz(Box::new(
+                    fbfast_core::decode::ZonedValue {
+                        utc_date,
+                        utc_time,
+                        local_date,
+                        local_time,
+                        zone,
+                    },
+                )));
+            }
             return Ok(Value::Timestamp {
                 date: ordinal(value)?,
                 time: ticks(value)?,
@@ -150,6 +152,12 @@ impl<'py> Converter<'py> {
         if value.is_instance(&self.time)? {
             naive(value)?;
             return Ok(Value::Time(ticks(value)?));
+        }
+        if value.is_instance(&self.zoned_time)? {
+            return Ok(Value::TimeTz {
+                utc_time: ticks(&value.getattr("utc_time")?)?,
+                zone: value.getattr("zone")?.extract()?,
+            });
         }
         Err(conversion("Unsupported parameter type"))
     }
@@ -169,6 +177,7 @@ impl<'py> Converter<'py> {
             Value::Int(value) => value.into_py_any(self.py),
             Value::Float(value) => value.into_py_any(self.py),
             Value::Text(value) => value.into_py_any(self.py),
+            Value::DecFloat(value) => Ok(self.decimal.call1((value,))?.unbind()),
             Value::Bytes(value) if value.len() >= 1024 * 1024 => self.bytes(value),
             Value::Bytes(value) => Ok(PyBytes::new(self.py, value).into_any().unbind()),
             Value::Decimal { coefficient, scale } => {
@@ -189,6 +198,20 @@ impl<'py> Converter<'py> {
                 )?
                 .unbind()),
             Value::Time(value) => self.time_value(*value),
+            Value::TimeTz { utc_time, zone } => Ok(self
+                .zoned_time
+                .call1((self.time_value(*utc_time)?, zone))?
+                .unbind()),
+            Value::TimestampTz(value) => Ok(self
+                .timestamp_output
+                .call1((
+                    value.utc_date,
+                    value.utc_time,
+                    value.local_date,
+                    value.local_time,
+                    &value.zone,
+                ))?
+                .unbind()),
             Value::Timestamp { date, time } => {
                 let date = self.value(&Value::Date(*date))?;
                 let time = self.time_value(*time)?;
@@ -269,7 +292,9 @@ fn ordinal(value: &Bound<'_, PyAny>) -> PyResult<i32> {
 }
 fn naive(value: &Bound<'_, PyAny>) -> PyResult<()> {
     if !value.getattr("tzinfo")?.is_none() {
-        return Err(conversion("Timezone-aware binding is not implemented yet"));
+        return Err(conversion(
+            "Use TimeWithZone for TIME WITH TIME ZONE; aware time has no date for DST rules",
+        ));
     }
     Ok(())
 }

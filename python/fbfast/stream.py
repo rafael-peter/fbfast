@@ -5,7 +5,7 @@ from types import TracebackType
 from typing import Any, Generic, Self, TypeVar, cast
 from .json_options import JsonSettings, JsonFormat
 
-from ._native import _Pool, _Stream
+from ._native import _Pool, _Stream, ArrowBatch, ArrowSchema
 
 Batch = list[tuple[Any, ...]] | list[dict[str, Any]]
 _T = TypeVar("_T")
@@ -20,11 +20,12 @@ def _cleanup_note(original: BaseException | None, cleanup: Exception) -> None:
 
 
 class _Base(Generic[_T]):
-    __slots__ = ("_owner", "_sql", "_params", "_batch_rows", "_as_dict", "_timeout", "_native", "_entered", "_closed", "_json")
+    __slots__ = ("_owner", "_sql", "_params", "_batch_rows", "_as_dict", "_timeout", "_native", "_entered", "_closed", "_json", "_arrow")
 
     def __init__(self, owner: _Pool, sql: str, params: list[Any] | tuple[Any, ...] | None,
                  batch_rows: int | None, as_dict: bool, timeout: float | None,
-                 json: tuple[JsonSettings, JsonFormat] | None = None) -> None:
+                 json: tuple[JsonSettings, JsonFormat] | None = None, *, arrow: bool = False) -> None:
+        self._arrow = arrow
         self._json = json
         self._owner = owner  # Keeps the pool alive for this context's entire lifetime.
         self._sql = sql
@@ -42,7 +43,7 @@ class _Base(Generic[_T]):
         self._entered = True
         if self._json is None:
             self._native = self._owner.stream(self._sql, self._params, batch_rows=self._batch_rows,
-                                             as_dict=self._as_dict, timeout=self._timeout)
+                                             as_dict=self._as_dict, timeout=self._timeout, arrow=self._arrow)
         else:
             self._native = self._owner.stream_json(self._sql, self._params, options=self._json,
                                                   batch_rows=self._batch_rows,
@@ -155,3 +156,32 @@ class JsonStream(_SyncStream[bytes]):
 class AsyncJsonStream(_AsyncStream[bytes]):
     """Asynchronous context manager yielding native JSON bytes, without Python rows."""
     __slots__ = ()
+
+
+class ArrowStream(_SyncStream[ArrowBatch]):
+    """Owned Arrow batches; a single C Stream export takes over iteration.
+
+    C Stream consumption blocks the calling thread. Use AsyncArrowStream for
+    event-loop iteration. The surrounding context owns bounded cleanup.
+    """
+    __slots__ = ()
+
+    @property
+    def schema(self) -> ArrowSchema:
+        """Describe-derived schema, available after enter even for empty results."""
+        return self._active().schema
+
+    def __arrow_c_stream__(self, requested_schema: object | None = None) -> object:
+        if self._closed:
+            raise RuntimeError("Cannot export a closed Arrow stream")
+        return self._active().__arrow_c_stream__(requested_schema)
+
+
+class AsyncArrowStream(_AsyncStream[ArrowBatch]):
+    """Async context yielding owned ArrowBatch objects without requiring PyArrow."""
+    __slots__ = ()
+
+    @property
+    def schema(self) -> ArrowSchema:
+        """Stable schema, available after async enter before any batch is requested."""
+        return self._active().schema

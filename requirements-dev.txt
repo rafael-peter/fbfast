@@ -7,4 +7,9 @@ fastapi==0.143.2
 starlette==1.8.0
 uvicorn==0.54.0
 anyio==4.15.1
+pyarrow==26.0.0
+polars==2.0.0
+pefile==2024.8.26; sys_platform == 'win32'
+patchelf==0.17.2.4; sys_platform == 'linux'
+auditwheel==6.4.2; sys_platform == 'linux'
 

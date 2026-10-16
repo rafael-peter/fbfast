@@ -10,6 +10,7 @@ mod metadata;
 mod statement;
 mod status;
 mod transaction;
+mod zoned;
 
 pub use attachment::{AttachOptions, Connection};
 pub use control::CancelHandle;
@@ -18,3 +19,4 @@ pub use loader::{Client, ClientInfo};
 pub use metadata::{Column, Metadata};
 pub use statement::StatementId;
 pub use status::{DatabaseErrorKind, NativeError};
+pub use zoned::{ZonedValue, ZONE_CAPACITY};

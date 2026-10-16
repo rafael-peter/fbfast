@@ -1,7 +1,11 @@
+mod arrow;
+mod arrow_stream;
+pub use arrow_stream::ArrowConsumer;
 mod blob;
 mod cleanup;
 mod connection;
 mod cursor;
+mod decoder;
 mod handshake;
 mod json;
 mod json_stream;

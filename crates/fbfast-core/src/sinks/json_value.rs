@@ -32,6 +32,25 @@ pub(super) fn value(
                     .map_err(|_| conversion("JSON numeric serialization failed"))?;
             }
         }
+        Value::DecFloat(text) => {
+            let decimal = crate::decode::decimal::DecimalParts::parse(text)
+                .ok_or_else(|| conversion("Invalid native DECFLOAT text"))?;
+            if let Some(number) = decimal.json_number() {
+                if options.string_decimals {
+                    serialized(out, text)?;
+                } else {
+                    CompactFormatter
+                        .write_number_str(out, &number)
+                        .map_err(|_| conversion("JSON numeric serialization failed"))?;
+                }
+            } else if options.null_non_finite {
+                out.extend_from_slice(b"null");
+            } else {
+                return Err(conversion(
+                    "Non-finite DECFLOAT requires json_non_finite='null'",
+                ));
+            }
+        }
         Value::Float(value) if value.is_finite() => serialized(out, value)?,
         Value::Float(_) if options.null_non_finite => out.extend_from_slice(b"null"),
         Value::Float(_) => {
@@ -44,6 +63,23 @@ pub(super) fn value(
         Value::Bytes(_) => return Err(conversion("Binary value requires json_binary='base64'")),
         Value::Date(value) => serialized(out, &date(*value)?)?,
         Value::Time(value) => serialized(out, &time(*value)?)?,
+        Value::TimeTz { utc_time, zone } => {
+            out.extend_from_slice(b"{\"utc_time\":");
+            serialized(out, &time(*utc_time)?)?;
+            out.extend_from_slice(b",\"zone\":");
+            serialized(out, zone)?;
+            out.push(b'}');
+        }
+        Value::TimestampTz(value) => {
+            out.extend_from_slice(b"{\"utc\":");
+            serialized(
+                out,
+                &format!("{}T{}Z", date(value.utc_date)?, time(value.utc_time)?),
+            )?;
+            out.extend_from_slice(b",\"zone\":");
+            serialized(out, &value.zone)?;
+            out.push(b'}');
+        }
         Value::Timestamp {
             date: day,
             time: ticks,

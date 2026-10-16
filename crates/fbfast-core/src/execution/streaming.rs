@@ -1,7 +1,7 @@
 use super::{control::QueryOptions, cursor::RowSink, ExecutionConnection};
 use crate::{
     config::Config,
-    decode::{BlobReader, DecodePlan, Value},
+    decode::{DecodePlan, NativeReader, Value},
     error::Error,
     sinks::rows::Rows,
 };
@@ -45,9 +45,9 @@ impl<C: BatchConsumer> RowSink for Batches<'_, C> {
         plan: &DecodePlan,
         row: &[u8],
         _: &Config,
-        blobs: &mut impl BlobReader,
+        native: &mut impl NativeReader,
     ) -> Result<(), Error> {
-        self.rows.push(plan, row, &self.config, blobs)
+        self.rows.push(plan, row, &self.config, native)
     }
     fn after_fetch(&mut self) -> Result<bool, Error> {
         if self.rows.count == 0 {

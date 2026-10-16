@@ -12,6 +12,30 @@ pub enum Executor {
     Session(Session),
 }
 impl Executor {
+    pub fn stream_arrow(
+        &self,
+        sql: String,
+        params: Vec<Value>,
+        batch_rows: Option<u32>,
+        timeout: Option<f64>,
+    ) -> Result<Stream, Error> {
+        match self {
+            Self::Pool(pool) => pool.stream_arrow(sql, params, batch_rows, timeout),
+            Self::Session(session) => session.stream_arrow(sql, params, batch_rows, timeout),
+        }
+    }
+    pub fn submit_arrow(
+        &self,
+        sql: String,
+        params: Vec<Value>,
+        mode: fbfast_core::sinks::arrow::ArrowMode,
+        timeout: Option<f64>,
+    ) -> Result<Pending, Error> {
+        match self {
+            Self::Pool(pool) => pool.submit_arrow(sql, params, mode, timeout),
+            Self::Session(session) => session.submit_arrow(sql, params, mode, timeout),
+        }
+    }
     pub fn submit_json(
         &self,
         sql: String,

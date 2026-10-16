@@ -1,7 +1,7 @@
 use super::{control::QueryOptions, cursor::RowSink, ExecutionConnection};
 use crate::{
     config::Config,
-    decode::{BlobReader, DecodePlan, Value},
+    decode::{DecodePlan, NativeReader, Value},
     error::{Error, ErrorKind},
     sinks::json::{JsonOptions, JsonOutput, JsonWriter},
 };
@@ -16,7 +16,7 @@ impl RowSink for Materialized {
         plan: &DecodePlan,
         row: &[u8],
         config: &Config,
-        blobs: &mut impl BlobReader,
+        native: &mut impl NativeReader,
     ) -> Result<(), Error> {
         if config
             .max_result_rows
@@ -31,7 +31,7 @@ impl RowSink for Materialized {
         if self.output.rows != 0 {
             self.output.data.push(b',');
         }
-        self.writer.row(plan, row, &mut self.output.data, blobs)?;
+        self.writer.row(plan, row, &mut self.output.data, native)?;
         self.output.rows += 1;
         Ok(())
     }

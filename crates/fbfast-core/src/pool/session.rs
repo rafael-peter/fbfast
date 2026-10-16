@@ -73,6 +73,22 @@ impl Pool {
 }
 
 impl Session {
+    pub fn submit_arrow(
+        &self,
+        sql: String,
+        params: Vec<Value>,
+        mode: crate::sinks::arrow::ArrowMode,
+        timeout: Option<f64>,
+    ) -> Result<Pending, Error> {
+        crate::statements::validate_read_query(&sql)?;
+        crate::execution::control::deadline(timeout)?;
+        self.submit(Work::Arrow {
+            sql,
+            params,
+            mode,
+            timeout,
+        })
+    }
     fn handle(&self) -> Result<&Arc<Handle>, Error> {
         if self.pid != std::process::id() {
             return Err(fork_error());
@@ -180,7 +196,13 @@ impl Session {
         unique_names: bool,
         timeout: Option<f64>,
     ) -> Result<Stream, Error> {
-        self.stream_output(sql, params, batch_rows, unique_names, timeout, None)
+        self.stream_output(
+            sql,
+            params,
+            batch_rows,
+            timeout,
+            super::stream::StreamFormat::Rows(unique_names),
+        )
     }
     pub fn stream_json(
         &self,
@@ -193,19 +215,36 @@ impl Session {
         ),
         timeout: Option<f64>,
     ) -> Result<Stream, Error> {
-        self.stream_output(sql, params, batch_rows, json.0.records, timeout, Some(json))
+        self.stream_output(
+            sql,
+            params,
+            batch_rows,
+            timeout,
+            super::stream::StreamFormat::Json(json),
+        )
+    }
+    pub fn stream_arrow(
+        &self,
+        sql: String,
+        params: Vec<Value>,
+        batch_rows: Option<u32>,
+        timeout: Option<f64>,
+    ) -> Result<Stream, Error> {
+        self.stream_output(
+            sql,
+            params,
+            batch_rows,
+            timeout,
+            super::stream::StreamFormat::Arrow,
+        )
     }
     fn stream_output(
         &self,
         sql: String,
         params: Vec<Value>,
         batch_rows: Option<u32>,
-        unique_names: bool,
         timeout: Option<f64>,
-        json: Option<(
-            crate::sinks::json::JsonOptions,
-            crate::sinks::json::JsonFormat,
-        )>,
+        format: super::stream::StreamFormat,
     ) -> Result<Stream, Error> {
         let h = self.handle()?;
         crate::statements::validate_read_query(&sql)?;
@@ -221,8 +260,7 @@ impl Session {
             sql,
             params,
             batch_rows,
-            unique_names,
-            json,
+            format,
             timeout,
             producer: Producer {
                 sender,

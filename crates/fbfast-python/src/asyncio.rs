@@ -18,6 +18,7 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 #[derive(Clone, Copy)]
 pub enum Form {
+    Arrow(fbfast_core::sinks::arrow::ArrowMode),
     Rows { first: bool, as_dict: bool },
     Value,
     Plan,
@@ -49,6 +50,7 @@ pub fn query<'py>(
     let permit = admission(gate)?;
     let parameters = Converter::new(py)?.params(params)?;
     let pending = match form {
+        Form::Arrow(mode) => pool.submit_arrow(sql, parameters, mode, timeout),
         Form::Json(json) => pool.submit_json(sql, parameters, json, timeout),
         Form::Plan => pool.submit_explain(sql, parameters, timeout),
         Form::Value => pool.submit_rows(sql, parameters, true, false, timeout),
@@ -75,6 +77,9 @@ pub fn query<'py>(
                 // Borrow buffers so their potentially large deallocation happens
                 // after Python::attach returns and the GIL has been released.
                 let result = match (&output, form) {
+                    (Output::Arrow(output), Form::Arrow(mode)) => {
+                        crate::arrow::convert(py, output, mode)
+                    }
                     (Output::Json(json), Form::Json(_)) => converter.bytes(&json.data),
                     (Output::Rows(rows), Form::Rows { first, as_dict }) => {
                         if first {

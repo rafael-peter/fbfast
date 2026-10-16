@@ -5,7 +5,7 @@ use super::{
 };
 use crate::{
     config::Config,
-    decode::{BlobReader, DecodePlan, Value},
+    decode::{DecodePlan, NativeReader, Value},
     error::Error,
     sinks::json::{JsonFormat, JsonOptions, JsonOutput, JsonWriter},
 };
@@ -73,7 +73,7 @@ impl<C: BatchConsumer<JsonOutput>> RowSink for Chunks<'_, C> {
         plan: &DecodePlan,
         row: &[u8],
         _: &Config,
-        blobs: &mut impl BlobReader,
+        native: &mut impl NativeReader,
     ) -> Result<(), Error> {
         if self.stopped {
             return Ok(());
@@ -83,7 +83,7 @@ impl<C: BatchConsumer<JsonOutput>> RowSink for Chunks<'_, C> {
         if self.format == JsonFormat::Array && self.summary.rows != 0 {
             record.push(b',');
         }
-        self.writer.row(plan, row, &mut record, blobs)?;
+        self.writer.row(plan, row, &mut record, native)?;
         if self.format == JsonFormat::Ndjson {
             record.push(b'\n');
             if self.output.data.len().saturating_add(record.len()) > self.limit {

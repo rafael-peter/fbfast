@@ -23,12 +23,16 @@ pub(super) fn execute(
         cleaning,
     };
     match &job.work {
+        Work::Arrow {
+            sql, params, mode, ..
+        } => connection
+            .arrow_with(sql, params, *mode, &options(false, true))
+            .map(Output::Arrow),
         Work::Stream {
             sql,
             params,
             batch_rows,
-            unique_names,
-            json,
+            format,
             producer,
             ..
         } => {
@@ -42,7 +46,18 @@ pub(super) fn execute(
                 opened: false,
                 deadline: end,
             };
-            if let Some(json) = json {
+            if let super::stream::StreamFormat::Arrow = format {
+                return connection
+                    .stream_arrow_with(
+                        sql,
+                        params,
+                        *batch_rows,
+                        &options(false, true),
+                        &mut consumer,
+                    )
+                    .map(|_| Output::Ready);
+            }
+            if let super::stream::StreamFormat::Json(json) = format {
                 return connection
                     .stream_json_with(
                         sql,
@@ -59,7 +74,10 @@ pub(super) fn execute(
                     sql,
                     params,
                     *batch_rows,
-                    &options(false, *unique_names),
+                    &options(
+                        false,
+                        matches!(format, super::stream::StreamFormat::Rows(true)),
+                    ),
                     &mut consumer,
                 )
                 .map(|_| Output::Ready)

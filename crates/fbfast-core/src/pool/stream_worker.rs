@@ -11,7 +11,8 @@ use std::{
 };
 
 pub(super) enum Event {
-    Opened,
+    Opened(Option<arrow_schema::SchemaRef>),
+    Arrow(arrow_array::RecordBatch),
     Batch(Rows),
     Json(JsonOutput),
 }
@@ -54,7 +55,7 @@ impl Consumer<'_> {
         if !self.opened {
             self.producer
                 .sender
-                .try_send(Event::Opened)
+                .try_send(Event::Opened(None))
                 .map_err(|_| consumer_gone())?;
             self.opened = true;
         }
@@ -147,6 +148,25 @@ impl BatchConsumer<JsonOutput> for Consumer<'_> {
     fn batch(&mut self, json: JsonOutput) -> Result<bool, Error> {
         let (count, bytes) = (json.rows, json.data.len());
         self.send(Event::Json(json), count, bytes)
+    }
+}
+impl crate::execution::ArrowConsumer for Consumer<'_> {
+    fn schema(&mut self, schema: arrow_schema::SchemaRef) -> Result<(), Error> {
+        self.producer
+            .sender
+            .try_send(Event::Opened(Some(schema)))
+            .map_err(|_| consumer_gone())?;
+        self.opened = true;
+        Ok(())
+    }
+}
+impl BatchConsumer<arrow_array::RecordBatch> for Consumer<'_> {
+    fn before_fetch(&mut self) -> Result<bool, Error> {
+        self.before_fetch()
+    }
+    fn batch(&mut self, batch: arrow_array::RecordBatch) -> Result<bool, Error> {
+        let (rows, bytes) = (batch.num_rows(), batch.get_array_memory_size());
+        self.send(Event::Arrow(batch), rows, bytes)
     }
 }
 fn consumer_gone() -> Error {

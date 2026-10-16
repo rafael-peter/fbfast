@@ -1,0 +1,189 @@
+[
+  {
+    "round": 0,
+    "case": "scan100k",
+    "format": "arrow",
+    "fetch_size": 5000,
+    "adapter": "fbfast",
+    "phase": "measured",
+    "seconds": 0.443237917002989,
+    "client_cpu_seconds": 0.03828900000000002,
+    "process_peak_before_validation_bytes": 51232768,
+    "import_seconds": 0.39061358400795143,
+    "attach_prepare_seconds": 0.21782133399392478,
+    "stages": {
+      "stages": "native pipeline includes cleanup; not instrumented separately"
+    },
+    "build_id": "c1555f90c7d1b5dcb34e19e83ccb174ceb487bf6da3aec2dab2fc4635104a1b1",
+    "plan": "\nSelect Expression\n    -> First N Records\n        -> Table \"FBFAST_BENCH\" Full Scan",
+    "arrow_buffer_bytes": 800000,
+    "schema": "ID: int32\n  -- field metadata --\n  fbfast.charset: '0'\n  fbfast.original_arrow_type: 'Int32'\n  fbfast.scale: '0'\n  fbfast.sql_type: '496'\n  fbfast.storage_bytes: '4'\n  fbfast.subtype: '0'\nV: int32\n  -- field metadata --\n  fbfast.charset: '0'\n  fbfast.original_arrow_type: 'Int32'\n  fbfast.scale: '0'\n  fbfast.sql_type: '496'\n  fbfast.storage_bytes: '4'\n  fbfast.subtype: '0'",
+    "correctness": {
+      "phase": "validated",
+      "rows": 100000,
+      "sha256": "cd45219bda765294f81ddb1617617dedc0093c7a5d70d6df7c08f7cff6866dd2"
+    },
+    "sampled_peak_rss_bytes": 51527680,
+    "rss_before_query_bytes": 51216384,
+    "rss_at_result_bytes": 51527680,
+    "rss_sample_count": 76,
+    "rss_interval_seconds": 0.005,
+    "stderr_bytes": 0,
+    "server_cpu_seconds": 0.448904,
+    "server_counter_interval_seconds": 0.487786416997551,
+    "server_before": {
+      "cpu_usec": 189470170,
+      "memory_current_bytes": 163790848,
+      "memory_lifetime_peak_bytes": 198758400
+    },
+    "server_after": {
+      "cpu_usec": 189919074,
+      "memory_current_bytes": 163491840,
+      "memory_lifetime_peak_bytes": 198758400
+    }
+  },
+  {
+    "round": 0,
+    "case": "scan100k",
+    "format": "arrow",
+    "fetch_size": 5000,
+    "adapter": "firebird-driver",
+    "phase": "measured",
+    "seconds": 0.44033483299426734,
+    "client_cpu_seconds": 0.255345,
+    "process_peak_before_validation_bytes": 82100224,
+    "import_seconds": 0.07638420799048617,
+    "attach_prepare_seconds": 0.035222208010964096,
+    "stages": {
+      "execute_seconds": 0.0004011249984614551,
+      "fetch_decode_seconds": 0.43071529200824443,
+      "cleanup_seconds": 0.0004397080047056079,
+      "conversion_seconds": 0.007154583989176899,
+      "first_batch_seconds": 0.02005954200285487,
+      "effective_batch_rows": 5000
+    },
+    "build_id": "c1555f90c7d1b5dcb34e19e83ccb174ceb487bf6da3aec2dab2fc4635104a1b1",
+    "plan": "PLAN (FBFAST_BENCH NATURAL)",
+    "arrow_buffer_bytes": 800000,
+    "schema": "ID: int32\nV: int32",
+    "correctness": {
+      "phase": "validated",
+      "rows": 100000,
+      "sha256": "cd45219bda765294f81ddb1617617dedc0093c7a5d70d6df7c08f7cff6866dd2"
+    },
+    "sampled_peak_rss_bytes": 82083840,
+    "rss_before_query_bytes": 64995328,
+    "rss_at_result_bytes": 68698112,
+    "rss_sample_count": 77,
+    "rss_interval_seconds": 0.005,
+    "stderr_bytes": 0,
+    "server_cpu_seconds": 0.433811,
+    "server_counter_interval_seconds": 0.4771487919933861,
+    "server_before": {
+      "cpu_usec": 190377746,
+      "memory_current_bytes": 163794944,
+      "memory_lifetime_peak_bytes": 198758400
+    },
+    "server_after": {
+      "cpu_usec": 190811557,
+      "memory_current_bytes": 163807232,
+      "memory_lifetime_peak_bytes": 198758400
+    }
+  },
+  {
+    "round": 0,
+    "case": "scan100k",
+    "format": "arrow",
+    "fetch_size": 5000,
+    "adapter": "firebird-driver-reset",
+    "phase": "measured",
+    "seconds": 0.4470125000079861,
+    "client_cpu_seconds": 0.27056399999999997,
+    "process_peak_before_validation_bytes": 81772544,
+    "import_seconds": 0.05384437499742489,
+    "attach_prepare_seconds": 0.030915750001440756,
+    "stages": {
+      "execute_seconds": 0.00039887499588076025,
+      "fetch_decode_seconds": 0.43790554099541623,
+      "cleanup_seconds": 0.0006641250074608251,
+      "conversion_seconds": 0.0064542920008534566,
+      "first_batch_seconds": 0.022073665997595526,
+      "effective_batch_rows": 5000
+    },
+    "build_id": "c1555f90c7d1b5dcb34e19e83ccb174ceb487bf6da3aec2dab2fc4635104a1b1",
+    "plan": "PLAN (FBFAST_BENCH NATURAL)",
+    "arrow_buffer_bytes": 800000,
+    "schema": "ID: int32\nV: int32",
+    "correctness": {
+      "phase": "validated",
+      "rows": 100000,
+      "sha256": "cd45219bda765294f81ddb1617617dedc0093c7a5d70d6df7c08f7cff6866dd2"
+    },
+    "sampled_peak_rss_bytes": 80625664,
+    "rss_before_query_bytes": 64651264,
+    "rss_at_result_bytes": 68386816,
+    "rss_sample_count": 77,
+    "rss_interval_seconds": 0.005,
+    "stderr_bytes": 0,
+    "server_cpu_seconds": 0.432216,
+    "server_counter_interval_seconds": 0.5185946249985136,
+    "server_before": {
+      "cpu_usec": 191164264,
+      "memory_current_bytes": 163172352,
+      "memory_lifetime_peak_bytes": 198758400
+    },
+    "server_after": {
+      "cpu_usec": 191596480,
+      "memory_current_bytes": 163192832,
+      "memory_lifetime_peak_bytes": 198758400
+    }
+  },
+  {
+    "round": 0,
+    "case": "scan100k",
+    "format": "arrow",
+    "fetch_size": 5000,
+    "adapter": "fdb-arm64",
+    "phase": "measured",
+    "seconds": 0.44619054200302344,
+    "client_cpu_seconds": 0.262651,
+    "process_peak_before_validation_bytes": 73318400,
+    "import_seconds": 0.03893241701007355,
+    "attach_prepare_seconds": 0.033379707994754426,
+    "stages": {
+      "execute_seconds": 0.00038212499930523336,
+      "fetch_decode_seconds": 0.437545416993089,
+      "cleanup_seconds": 0.0003982500056736171,
+      "conversion_seconds": 0.006207957994774915,
+      "first_batch_seconds": 0.02570945800107438,
+      "effective_batch_rows": 5000
+    },
+    "build_id": "c1555f90c7d1b5dcb34e19e83ccb174ceb487bf6da3aec2dab2fc4635104a1b1",
+    "plan": "PLAN (FBFAST_BENCH NATURAL)",
+    "arrow_buffer_bytes": 800000,
+    "schema": "ID: int32\nV: int32",
+    "correctness": {
+      "phase": "validated",
+      "rows": 100000,
+      "sha256": "cd45219bda765294f81ddb1617617dedc0093c7a5d70d6df7c08f7cff6866dd2"
+    },
+    "sampled_peak_rss_bytes": 73318400,
+    "rss_before_query_bytes": 58490880,
+    "rss_at_result_bytes": 69353472,
+    "rss_sample_count": 76,
+    "rss_interval_seconds": 0.005,
+    "stderr_bytes": 0,
+    "server_cpu_seconds": 0.439458,
+    "server_counter_interval_seconds": 0.47993154199502897,
+    "server_before": {
+      "cpu_usec": 192052621,
+      "memory_current_bytes": 162951168,
+      "memory_lifetime_peak_bytes": 198758400
+    },
+    "server_after": {
+      "cpu_usec": 192492079,
+      "memory_current_bytes": 162963456,
+      "memory_lifetime_peak_bytes": 198758400
+    }
+  }
+]

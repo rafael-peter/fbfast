@@ -1,13 +1,63 @@
 """Typed module-level delegates; names resolve to the existing Pool instance."""
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+from .analytics import Unsupported
+
+if TYPE_CHECKING:
+    import pyarrow as pa  # type: ignore[import-untyped]
+    import polars as pl
 
 from .queries import _DEFAULT, _DefaultTimeout
 from .registry import get_pool
-from .stream import AsyncStream, Stream
+from .stream import AsyncStream, Stream, ArrowStream, AsyncArrowStream
 from .stream import AsyncJsonStream, JsonStream
 from .json_options import JsonBinary, JsonDecimals, JsonFormat, JsonIntegers, JsonNonFinite, JsonOrient
+
+
+def stream_arrow(sql: str, params: list[Any] | tuple[Any, ...] | None = None, *, pool: str = "default",
+                 batch_rows: int | None = None, timeout: float | None | _DefaultTimeout = _DEFAULT) -> ArrowStream:
+    """Resolve a named pool; use with for Arrow batches or blocking C Stream export."""
+    return get_pool(pool).stream_arrow(sql, params, batch_rows=batch_rows, timeout=timeout)
+
+
+def stream_arrow_async(sql: str, params: list[Any] | tuple[Any, ...] | None = None, *, pool: str = "default",
+                       batch_rows: int | None = None, timeout: float | None | _DefaultTimeout = _DEFAULT) -> AsyncArrowStream:
+    """Resolve a named pool; use async with and async for owned ArrowBatch objects."""
+    return get_pool(pool).stream_arrow_async(sql, params, batch_rows=batch_rows, timeout=timeout)
+
+
+def fetch_arrow(
+    sql: str, params: list[Any] | tuple[Any, ...] | None = None, *, pool: str = "default",
+    timeout: float | None | _DefaultTimeout = _DEFAULT,
+) -> pa.Table:
+    """Materialize a native Arrow table from a named pool; requires fbfast[arrow]."""
+    return get_pool(pool).fetch_arrow(sql, params, timeout=timeout)
+
+
+async def fetch_arrow_async(
+    sql: str, params: list[Any] | tuple[Any, ...] | None = None, *, pool: str = "default",
+    timeout: float | None | _DefaultTimeout = _DEFAULT,
+) -> pa.Table:
+    """Materialize Arrow asynchronously through the named pool's executor."""
+    return await get_pool(pool).fetch_arrow_async(sql, params, timeout=timeout)
+
+
+def fetch_polars(
+    sql: str, params: list[Any] | tuple[Any, ...] | None = None, *, pool: str = "default",
+    unsupported: Unsupported = "error", timeout: float | None | _DefaultTimeout = _DEFAULT,
+) -> pl.DataFrame:
+    """Materialize Polars from a named pool, with explicit wide-decimal fallback."""
+    return get_pool(pool).fetch_polars(sql, params, unsupported=unsupported, timeout=timeout)
+
+
+async def fetch_polars_async(
+    sql: str, params: list[Any] | tuple[Any, ...] | None = None, *, pool: str = "default",
+    unsupported: Unsupported = "error", timeout: float | None | _DefaultTimeout = _DEFAULT,
+) -> pl.DataFrame:
+    """Materialize Polars asynchronously, including final conversion off the loop."""
+    return await get_pool(pool).fetch_polars_async(sql, params, unsupported=unsupported, timeout=timeout)
 
 
 def fetch_json(

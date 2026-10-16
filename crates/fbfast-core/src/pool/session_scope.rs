@@ -66,13 +66,28 @@ impl Scope {
         }
     }
     pub fn request_close(&self) {
-        self.closing.store(true, Ordering::Release);
+        // Publish closing only after an active delivery sees cancellation.
+        // Otherwise the worker may acknowledge successful close first.
         self.cancel_active();
+        self.closing.store(true, Ordering::Release);
+    }
+    pub fn close_result(&self) -> Result<(), Error> {
+        // Permit::drop aborts the parent before clearing active; this order
+        // also observes cancellation if delivery finishes between the checks.
+        self.check_active()?;
+        self.check_errors()
     }
     pub fn abort(&self) {
         self.progress.cancellation.cancel();
     }
     pub fn check(&self) -> Result<(), Error> {
+        self.check_errors()?;
+        if self.ended.load(Ordering::Acquire) || self.closing.load(Ordering::Acquire) {
+            return Err(closed());
+        }
+        Ok(())
+    }
+    fn check_errors(&self) -> Result<(), Error> {
         if let Some(error) = self
             .failure
             .lock()
@@ -103,9 +118,6 @@ impl Scope {
                 "snapshot",
                 "Snapshot deadline expired",
             ));
-        }
-        if self.ended.load(Ordering::Acquire) || self.closing.load(Ordering::Acquire) {
-            return Err(closed());
         }
         Ok(())
     }
@@ -194,4 +206,56 @@ pub(super) fn closed() -> Error {
         "snapshot",
         "Snapshot session is closed",
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn closing_preserves_cancel_or_timeout_before_delivery_permit_is_released() {
+        for timeout in [false, true] {
+            let scope = Scope::new(Weak::new());
+            scope.ready.store(true, Ordering::Release);
+            let progress = Arc::new(Progress::default());
+            let permit = scope.reserve(progress.clone()).unwrap();
+            // A blocking Python materializer still retains the permit. Parent
+            // cancellation therefore has not propagated through Permit::drop.
+            let retained = permit.clone();
+            drop(permit);
+            if timeout {
+                progress.cancellation.timeout();
+            }
+            scope.request_close();
+            assert!(scope.closing.load(Ordering::Acquire));
+            assert!(scope.progress.cancellation.check().is_ok());
+            assert_eq!(
+                scope.close_result().unwrap_err().kind,
+                if timeout {
+                    ErrorKind::QueryTimeout
+                } else {
+                    ErrorKind::Cancelled
+                }
+            );
+            drop(retained);
+            assert!(scope.close_result().is_err());
+        }
+        let idle = Scope::new(Weak::new());
+        idle.request_close();
+        assert!(idle.close_result().is_ok());
+        let expired = Scope::new(Weak::new());
+        *expired.deadline.lock().unwrap() = Some(Instant::now());
+        expired.request_close();
+        assert_eq!(
+            expired.close_result().unwrap_err().kind,
+            ErrorKind::QueryTimeout
+        );
+        let aborted = Scope::new(Weak::new());
+        aborted.abort();
+        aborted.request_close();
+        assert_eq!(
+            aborted.close_result().unwrap_err().kind,
+            ErrorKind::Cancelled
+        );
+    }
 }

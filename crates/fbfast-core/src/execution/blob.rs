@@ -1,8 +1,5 @@
 use super::{control::Cancellation, cursor::check_deadline};
-use crate::{
-    decode::BlobReader,
-    error::{Error, ErrorKind},
-};
+use crate::error::{Error, ErrorKind};
 use fbfast_native::Connection;
 use std::time::Instant;
 
@@ -13,8 +10,8 @@ pub(super) struct Blobs<'a> {
     pub limit: u64,
 }
 
-impl BlobReader for Blobs<'_> {
-    fn read(&mut self, id: [u8; 8], charset: u32) -> Result<Vec<u8>, Error> {
+impl Blobs<'_> {
+    pub(super) fn read(&mut self, id: [u8; 8], charset: u32) -> Result<Vec<u8>, Error> {
         self.cancellation.check()?;
         check_deadline(self.deadline)?;
         self.native.open_blob(id, charset)?;

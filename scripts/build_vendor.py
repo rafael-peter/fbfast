@@ -16,7 +16,7 @@ import tempfile
 from pathlib import Path
 from zipfile import ZipFile
 
-from runtime_macos import copy_runtime, sha256
+from runtime_common import copy_runtime, sha256
 from package_licenses import collect as collect_licenses
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -58,7 +58,7 @@ def assemble_wheel(original: Path, staging: Path, out: Path, metadata: dict[str,
     metadata["files"] = {
         str(path.relative_to(package)): sha256(path)
         for path in sorted(package.rglob("*"))
-        if path.is_file()
+        if path.is_file() and path.name != "_build_info.json"
     }
     (package / "_build_info.json").write_text(json.dumps(metadata, indent=2) + "\n")
     out.mkdir(parents=True, exist_ok=True)
@@ -75,12 +75,24 @@ def assemble_wheel(original: Path, staging: Path, out: Path, metadata: dict[str,
 
 
 def identify_build(client: dict[str, str], env: dict[str, str]) -> dict[str, object]:
+    compiler = env.get("CXX", "cl" if platform.system() == "Windows" else "c++")
+    compiler_result = subprocess.run(
+        [compiler, *([] if platform.system() == "Windows" else ["--version"])],
+        env=env, text=True, capture_output=True,
+    )
+    compiler_banner = (compiler_result.stdout + compiler_result.stderr).splitlines()
+    if not compiler_banner:
+        raise RuntimeError("C++ compiler did not identify itself")
+    verbose = subprocess.check_output(["rustc", "-vV"], env=env, text=True)
+    target = next(line.split(": ", 1)[1] for line in verbose.splitlines() if line.startswith("host: "))
+    import tomllib
+    version = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["version"]
     toolchain = {
         "rustc": subprocess.check_output(["rustc", "--version"], env=env, text=True).strip(),
         "maturin": subprocess.check_output(
             [sys.executable, "-m", "maturin", "--version"], text=True
         ).strip(),
-        "clang": subprocess.check_output(["clang++", "--version"], text=True).splitlines()[0],
+        "cxx": compiler_banner[0],
     }
     inputs = {
         "source_hash": source_hash(),
@@ -98,10 +110,10 @@ def identify_build(client: dict[str, str], env: dict[str, str]) -> dict[str, obj
     env["FBFAST_BUILD_ID"] = build_id
     return {
         "manifest_version": 1,
-        "version": "0.1.0",
+        "version": version,
         "profile": "release",
         "build_id": build_id,
-        "target": "aarch64-apple-darwin",
+        "target": target,
         "python_implementation": sys.implementation.name,
         "python_version": f"{sys.version_info.major}.{sys.version_info.minor}",
         "soabi": sysconfig.get_config_var("SOABI"),
@@ -125,6 +137,7 @@ def compile_wheel(temp: Path, env: dict[str, str]) -> Path:
             sys.executable,
             "--out",
             str(temp / "wheels"),
+            *(["--compatibility", "manylinux_2_28"] if platform.system() == "Linux" else []),
         ],
         cwd=ROOT,
         env=env,
@@ -160,10 +173,10 @@ def install_folder(wheel: Path, out: Path) -> Path:
 
 
 def build_wheel_artifact(client_root: Path, wheel_out: Path) -> Path:
-    if platform.system() != "Darwin" or platform.machine() != "arm64":
-        raise RuntimeError(
-            "Only the macOS arm64 vendor target is implemented; no untested fallback"
-        )
+    supported = {("Darwin", "arm64"), ("Darwin", "x86_64"), ("Linux", "aarch64"),
+                 ("Linux", "x86_64"), ("Windows", "AMD64")}
+    if (platform.system(), platform.machine()) not in supported:
+        raise RuntimeError(f"Unsupported wheel target: {platform.system()} {platform.machine()}")
     if not (3, 11) <= sys.version_info[:2] <= (3, 14) or sysconfig.get_config_var(
         "Py_GIL_DISABLED"
     ):
@@ -181,7 +194,11 @@ def build_wheel_artifact(client_root: Path, wheel_out: Path) -> Path:
         shutil.copytree(ROOT / "third_party/licenses", package / "_licenses")
         metadata = identify_build(client, env)
         original = compile_wheel(temp, env)
-        collect_licenses(ROOT, package / "_licenses", env)
+        collect_licenses(ROOT, package / "_licenses", env, str(metadata["target"]))
+        if platform.system() == "Linux":
+            from repair_linux import repair
+            raw = assemble_wheel(original, staged, temp / "unrepaired", metadata)
+            return repair(raw, temp, wheel_out, metadata, assemble_wheel)
         return assemble_wheel(original, staged, wheel_out, metadata)
 
 

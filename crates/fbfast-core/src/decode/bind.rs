@@ -3,6 +3,18 @@ use crate::error::{Error, ErrorKind};
 use fbfast_native::Metadata;
 
 pub fn encode(schema: &Metadata, parameters: &[Value]) -> Result<Vec<u8>, Error> {
+    encode_with(schema, parameters, &mut |_, _| {
+        Err(super::plan::conversion(
+            "This type requires native encoding",
+        ))
+    })
+}
+
+pub fn encode_with(
+    schema: &Metadata,
+    parameters: &[Value],
+    native: &mut impl FnMut(u32, &Value) -> Result<Vec<u8>, Error>,
+) -> Result<Vec<u8>, Error> {
     if schema.columns.len() != parameters.len() {
         return Err(Error::new(
             ErrorKind::DataConversion,
@@ -32,11 +44,25 @@ pub fn encode(schema: &Metadata, parameters: &[Value]) -> Result<Vec<u8>, Error>
             continue;
         }
         let offset = c.offset as usize;
+        if matches!(c.sql_type, 32760 | 32762 | 32754 | 32756) {
+            // Utility errors may quote the input. Report only parameter index/type.
+            let data = native(c.sql_type, value).map_err(|_| invalid())?;
+            if data.len() != c.length as usize {
+                return Err(invalid());
+            }
+            write(&mut message, offset, &data)?;
+            continue;
+        }
         let integer = match value {
             Value::Int(n) => Some(rescale(*n, 0, c.scale).ok_or_else(invalid)?),
             Value::Decimal { coefficient, scale } => {
                 Some(rescale(*coefficient, *scale, c.scale).ok_or_else(invalid)?)
             }
+            Value::DecFloat(text) => Some(
+                super::decimal::DecimalParts::parse(text)
+                    .and_then(|value| value.scaled_i128(c.scale))
+                    .ok_or_else(invalid)?,
+            ),
             _ => None,
         };
         let data = match (c.sql_type, value) {
@@ -53,8 +79,8 @@ pub fn encode(schema: &Metadata, parameters: &[Value]) -> Result<Vec<u8>, Error>
                 .to_ne_bytes()
                 .to_vec(),
             (32752, _) if integer.is_some() => integer.ok_or_else(invalid)?.to_ne_bytes().to_vec(),
-            (482, Value::Float(n)) => n.to_ne_bytes().to_vec(),
-            (480, Value::Float(n)) if !n.is_finite() || (*n as f32).is_finite() => {
+            (480, Value::Float(n)) => n.to_ne_bytes().to_vec(),
+            (482, Value::Float(n)) if !n.is_finite() || (*n as f32).is_finite() => {
                 (*n as f32).to_ne_bytes().to_vec()
             }
             (32764, Value::Bool(b)) => vec![u8::from(*b)],

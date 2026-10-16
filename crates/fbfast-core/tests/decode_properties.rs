@@ -40,6 +40,45 @@ fn schema(sql_type: u32, length: u32, scale: i32, subtype: i32, charset: u32) ->
 
 proptest! {
     #[test]
+    fn sql_float_482_uses_four_bytes(bits in any::<u32>()) {
+        let value = f32::from_bits(bits);
+        prop_assume!(value.is_finite());
+        let metadata = schema(482, 4, 0, 0, 0);
+        let encoded = bind::encode(&metadata, &[Value::Float(value as f64)]).unwrap();
+        prop_assert_eq!(&encoded[..4], &value.to_ne_bytes());
+        let mut independent = vec![0; metadata.message_length as usize];
+        independent[..4].copy_from_slice(&value.to_ne_bytes());
+        let decoder = DecodePlan::new(metadata, &config()).unwrap();
+        let Value::Float(decoded) = decoder.value(0, &independent).unwrap() else { panic!("float expected") };
+        prop_assert_eq!((decoded as f32).to_bits(), bits);
+    }
+
+    #[test]
+    fn sql_double_480_uses_eight_bytes(bits in any::<u64>()) {
+        let value = f64::from_bits(bits);
+        prop_assume!(value.is_finite());
+        let metadata = schema(480, 8, 0, 0, 0);
+        let encoded = bind::encode(&metadata, &[Value::Float(value)]).unwrap();
+        prop_assert_eq!(&encoded[..8], &value.to_ne_bytes());
+        let mut independent = vec![0; metadata.message_length as usize];
+        independent[..8].copy_from_slice(&value.to_ne_bytes());
+        let decoder = DecodePlan::new(metadata, &config()).unwrap();
+        let Value::Float(decoded) = decoder.value(0, &independent).unwrap() else { panic!("float expected") };
+        prop_assert_eq!(decoded.to_bits(), bits);
+    }
+
+    #[test]
+    fn decimal_text_bind_preserves_full_integer_coefficient_and_scale(
+        value in any::<i128>(), scale in -38i32..=0, padding in 0usize..50
+    ) {
+        let metadata = schema(32752, 16, scale, 1, 0);
+        let input = Value::DecFloat(format!("{value}{}E{}", "0".repeat(padding), scale - padding as i32));
+        let bytes = bind::encode(&metadata, &[input]).unwrap();
+        let decoder = DecodePlan::new(metadata, &config()).unwrap();
+        prop_assert_eq!(decoder.value(0, &bytes).unwrap(), Value::Decimal { coefficient: value, scale });
+    }
+
+    #[test]
     fn all_int128_bits_survive_bind_and_decode(value in any::<i128>()) {
         let metadata = schema(32752, 16, 0, 0, 0);
         let bytes = bind::encode(&metadata, &[Value::Int(value)]).unwrap();

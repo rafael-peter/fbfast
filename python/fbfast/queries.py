@@ -1,9 +1,13 @@
 """Shared query surface for pools and explicit snapshot sessions."""
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import Any, TYPE_CHECKING, cast
+from .analytics import Unsupported, _mode
+if TYPE_CHECKING:
+    import pyarrow as pa  # type: ignore[import-untyped]
+    import polars as pl
 from ._native import FirebirdConfig, _Pool
-from .stream import AsyncStream, Stream
+from .stream import AsyncStream, Stream, ArrowStream, AsyncArrowStream
 from .stream import AsyncJsonStream, JsonStream
 from .json_options import JsonBinary, JsonDecimals, JsonFormat, JsonIntegers, JsonNonFinite, JsonOrient
 
@@ -22,6 +26,51 @@ class Queries:
 
     def _timeout(self, value: float | None | _DefaultTimeout) -> float | None:
         return self._config.query_timeout if isinstance(value, _DefaultTimeout) else value
+
+    def stream_arrow(self, sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
+                     batch_rows: int | None = None, timeout: float | None | _DefaultTimeout = _DEFAULT) -> ArrowStream:
+        """Use with; yields owned ArrowBatch objects or exports one blocking C Stream.
+
+        No Python Arrow extra is required. Schema is available after entering.
+        batch_rows defaults to fetch_size; batch_bytes bounds native batches.
+        max_result_rows applies to materialized fetches, not this stream.
+        """
+        return ArrowStream(self._executor, sql, params, batch_rows, False, self._timeout(timeout), arrow=True)
+
+    def stream_arrow_async(self, sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
+                           batch_rows: int | None = None, timeout: float | None | _DefaultTimeout = _DEFAULT) -> AsyncArrowStream:
+        """Use async with, then async for ArrowBatch; C Array exports need no PyArrow."""
+        return AsyncArrowStream(self._executor, sql, params, batch_rows, False, self._timeout(timeout), arrow=True)
+
+    def fetch_arrow(self, sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
+                    timeout: float | None | _DefaultTimeout = _DEFAULT) -> pa.Table:
+        """Build a complete pyarrow.Table natively; requires the arrow extra.
+
+        Preserves SQL types and metadata, including full INT128 as Decimal256.
+        Uses max_result_rows. No Python tuples or dictionaries are built per row.
+        """
+        return self._executor.arrow(sql, params, timeout=self._timeout(timeout))
+
+    async def fetch_arrow_async(self, sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
+                                timeout: float | None | _DefaultTimeout = _DEFAULT) -> pa.Table:
+        """Async fetch_arrow; native work and final adaptation run off the event loop."""
+        return await self._executor.arrow(sql, params, timeout=self._timeout(timeout), asynchronous=True)
+
+    def fetch_polars(self, sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
+                     unsupported: Unsupported = "error", timeout: float | None | _DefaultTimeout = _DEFAULT) -> pl.DataFrame:
+        """Build a Polars DataFrame through Arrow with rechunk=False; no pyarrow required.
+
+        unsupported='error' rejects unsupported Decimal256 columns before fetching.
+        'string' explicitly preserves those columns as exact decimal text.
+        The received Polars schema is checked before returning the result.
+        """
+        return cast("pl.DataFrame", self._executor.arrow(sql, params, mode=_mode(unsupported), timeout=self._timeout(timeout)))
+
+    async def fetch_polars_async(self, sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
+                                 unsupported: Unsupported = "error", timeout: float | None | _DefaultTimeout = _DEFAULT) -> pl.DataFrame:
+        """Async fetch_polars; conversion uses the bounded off-loop delivery executor."""
+        return cast("pl.DataFrame", await self._executor.arrow(sql, params, mode=_mode(unsupported),
+                    timeout=self._timeout(timeout), asynchronous=True))
 
     def fetch_json(
         self, sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,

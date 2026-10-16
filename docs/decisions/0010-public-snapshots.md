@@ -46,3 +46,15 @@ no runtime entregue e o verificador estrito rejeitou a pasta. O harness passou
 a usar uma cópia temporária do runtime, como já faz o consumidor Python. O
 verificador mantém a comparação exata de inventário e hashes; nenhum arquivo
 extra foi permitido para esconder esse efeito colateral dos testes.
+
+Na validação dos tipos com fuso, o teste de cancelamento durante conversão Python
+revelou uma corrida: request_close publicava closing antes de cancelar a entrega
+ativa, e o worker podia retornar sucesso sem consultar esse cancelamento. Agora
+o sinal de cancelamento precede a publicação de closing, e ambos os caminhos de
+saída conferem a operação ativa e, depois, o cancelamento do escopo. Essa ordem
+também cobre Permit::drop, que aborta o escopo antes de retirar a operação ativa.
+O fechamento também verifica prazo expirado, mesmo antes do próximo polling do
+worker, sem tratar o próprio estado closing como um erro de uma sessão ociosa.
+Um teste Rust mantém o permit de entrega retido e verifica cancelamento/timeout
+no fechamento; fechamento ocioso continua normal. A asserção do teste Python
+original foi preservada.

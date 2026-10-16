@@ -83,7 +83,9 @@ impl ExecutionConnection {
     ) -> Result<String, Error> {
         self.operation(sql, options, |connection, entry, _| {
             // Validate exactly the query binding contract without executing it.
-            let _parameters = bind::encode(&entry.input, params)?;
+            let _parameters = bind::encode_with(&entry.input, params, &mut |kind, value| {
+                crate::decode::encode_native(&mut connection.native, kind, value)
+            })?;
             connection.native.plan(entry.id).map_err(Error::from)
         })
     }

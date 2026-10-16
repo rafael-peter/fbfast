@@ -1,6 +1,6 @@
 use crate::{
     config::Config,
-    decode::{BlobReader, DecodePlan, Value},
+    decode::{DecodePlan, NativeReader, Value},
     error::{Error, ErrorKind},
 };
 
@@ -36,7 +36,7 @@ impl Rows {
         plan: &DecodePlan,
         message: &[u8],
         config: &Config,
-        blobs: &mut impl BlobReader,
+        native: &mut impl NativeReader,
     ) -> Result<(), Error> {
         if config
             .max_result_rows
@@ -45,7 +45,7 @@ impl Rows {
             return Err(limit());
         }
         for index in 0..self.names.len() {
-            let value = plan.value_with_blobs(index, message, blobs)?;
+            let value = plan.value_with_native(index, message, native)?;
             self.bytes = self
                 .bytes
                 .checked_add(value.payload_bytes())
