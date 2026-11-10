@@ -4,19 +4,14 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING, Any, Literal, TypeVar, cast, overload
 
+from ._errors import ArgumentError, usage
 from ._native import FirebirdConfig, _Pool
+from ._types import DEFAULT, DefaultTimeout, Params, Timeout
 
 if TYPE_CHECKING:
     from pydantic import BaseModel
 
 ModelT = TypeVar("ModelT", bound="BaseModel")
-
-
-class _DefaultTimeout:
-    pass
-
-
-_DEFAULT = _DefaultTimeout()
 
 
 def _check_model(model: type[ModelT] | None) -> None:
@@ -27,9 +22,9 @@ def _check_model(model: type[ModelT] | None) -> None:
     except ImportError as exc:
         raise ImportError("Typed rows require Pydantic v2: install fbfast[pydantic]") from exc
     if not isinstance(model, type) or not issubclass(model, BaseModel):
-        raise TypeError("model must be a Pydantic v2 BaseModel subclass")
+        raise usage(ArgumentError, "model must be a Pydantic v2 BaseModel subclass")
     if not hasattr(model, "model_validate"):
-        raise TypeError("Typed rows require Pydantic v2")
+        raise usage(ArgumentError, "Typed rows require Pydantic v2")
 
 
 def _validate_all(model: type[ModelT], rows: list[dict[str, Any]]) -> list[ModelT]:
@@ -37,6 +32,8 @@ def _validate_all(model: type[ModelT], rows: list[dict[str, Any]]) -> list[Model
 
 
 class RowQueries:
+    """Row-returning query methods shared by Pool and Snapshot."""
+
     __slots__ = ()
     _config: FirebirdConfig
 
@@ -44,41 +41,41 @@ class RowQueries:
     def _executor(self) -> _Pool:
         raise NotImplementedError
 
-    def _timeout(self, value: float | None | _DefaultTimeout) -> float | None:
-        return self._config.query_timeout if isinstance(value, _DefaultTimeout) else value
+    def _timeout(self, value: Timeout) -> float | None:
+        return self._config.query_timeout if isinstance(value, DefaultTimeout) else value
 
     @overload
     def fetch_all(
-        self, sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
+        self, sql: str, params: Params = None, *,
         model: type[ModelT], as_dict: bool = False,
-        timeout: float | None | _DefaultTimeout = _DEFAULT,
+        timeout: Timeout = DEFAULT,
     ) -> list[ModelT]: ...
 
     @overload
     def fetch_all(
-        self, sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
+        self, sql: str, params: Params = None, *,
         model: None = None, as_dict: Literal[False] = False,
-        timeout: float | None | _DefaultTimeout = _DEFAULT,
+        timeout: Timeout = DEFAULT,
     ) -> list[tuple[Any, ...]]: ...
 
     @overload
     def fetch_all(
-        self, sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
+        self, sql: str, params: Params = None, *,
         model: None = None, as_dict: Literal[True],
-        timeout: float | None | _DefaultTimeout = _DEFAULT,
+        timeout: Timeout = DEFAULT,
     ) -> list[dict[str, Any]]: ...
 
     @overload
     def fetch_all(
-        self, sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
+        self, sql: str, params: Params = None, *,
         model: None = None, as_dict: bool,
-        timeout: float | None | _DefaultTimeout = _DEFAULT,
+        timeout: Timeout = DEFAULT,
     ) -> list[tuple[Any, ...]] | list[dict[str, Any]]: ...
 
     def fetch_all(
-        self, sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
+        self, sql: str, params: Params = None, *,
         model: type[ModelT] | None = None, as_dict: bool = False,
-        timeout: float | None | _DefaultTimeout = _DEFAULT,
+        timeout: Timeout = DEFAULT,
     ) -> list[tuple[Any, ...]] | list[dict[str, Any]] | list[ModelT]:
         """Fetch rows; model selects validated Pydantic objects.
 
@@ -98,36 +95,36 @@ class RowQueries:
 
     @overload
     def fetch_one(
-        self, sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
+        self, sql: str, params: Params = None, *,
         model: type[ModelT], as_dict: bool = False,
-        timeout: float | None | _DefaultTimeout = _DEFAULT,
+        timeout: Timeout = DEFAULT,
     ) -> ModelT | None: ...
 
     @overload
     def fetch_one(
-        self, sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
+        self, sql: str, params: Params = None, *,
         model: None = None, as_dict: Literal[False] = False,
-        timeout: float | None | _DefaultTimeout = _DEFAULT,
+        timeout: Timeout = DEFAULT,
     ) -> tuple[Any, ...] | None: ...
 
     @overload
     def fetch_one(
-        self, sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
+        self, sql: str, params: Params = None, *,
         model: None = None, as_dict: Literal[True],
-        timeout: float | None | _DefaultTimeout = _DEFAULT,
+        timeout: Timeout = DEFAULT,
     ) -> dict[str, Any] | None: ...
 
     @overload
     def fetch_one(
-        self, sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
+        self, sql: str, params: Params = None, *,
         model: None = None, as_dict: bool,
-        timeout: float | None | _DefaultTimeout = _DEFAULT,
+        timeout: Timeout = DEFAULT,
     ) -> tuple[Any, ...] | dict[str, Any] | None: ...
 
     def fetch_one(
-        self, sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
+        self, sql: str, params: Params = None, *,
         model: type[ModelT] | None = None, as_dict: bool = False,
-        timeout: float | None | _DefaultTimeout = _DEFAULT,
+        timeout: Timeout = DEFAULT,
     ) -> tuple[Any, ...] | dict[str, Any] | None | ModelT:
         """Fetch the first row or None; model selects validated Pydantic objects.
 
@@ -148,36 +145,36 @@ class RowQueries:
 
     @overload
     async def fetch_all_async(
-        self, sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
+        self, sql: str, params: Params = None, *,
         model: type[ModelT], as_dict: bool = False,
-        timeout: float | None | _DefaultTimeout = _DEFAULT,
+        timeout: Timeout = DEFAULT,
     ) -> list[ModelT]: ...
 
     @overload
     async def fetch_all_async(
-        self, sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
+        self, sql: str, params: Params = None, *,
         model: None = None, as_dict: Literal[False] = False,
-        timeout: float | None | _DefaultTimeout = _DEFAULT,
+        timeout: Timeout = DEFAULT,
     ) -> list[tuple[Any, ...]]: ...
 
     @overload
     async def fetch_all_async(
-        self, sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
+        self, sql: str, params: Params = None, *,
         model: None = None, as_dict: Literal[True],
-        timeout: float | None | _DefaultTimeout = _DEFAULT,
+        timeout: Timeout = DEFAULT,
     ) -> list[dict[str, Any]]: ...
 
     @overload
     async def fetch_all_async(
-        self, sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
+        self, sql: str, params: Params = None, *,
         model: None = None, as_dict: bool,
-        timeout: float | None | _DefaultTimeout = _DEFAULT,
+        timeout: Timeout = DEFAULT,
     ) -> list[tuple[Any, ...]] | list[dict[str, Any]]: ...
 
     async def fetch_all_async(
-        self, sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
+        self, sql: str, params: Params = None, *,
         model: type[ModelT] | None = None, as_dict: bool = False,
-        timeout: float | None | _DefaultTimeout = _DEFAULT,
+        timeout: Timeout = DEFAULT,
     ) -> list[tuple[Any, ...]] | list[dict[str, Any]] | list[ModelT]:
         """Fetch rows; model selects validated Pydantic objects.
 
@@ -196,36 +193,36 @@ class RowQueries:
 
     @overload
     async def fetch_one_async(
-        self, sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
+        self, sql: str, params: Params = None, *,
         model: type[ModelT], as_dict: bool = False,
-        timeout: float | None | _DefaultTimeout = _DEFAULT,
+        timeout: Timeout = DEFAULT,
     ) -> ModelT | None: ...
 
     @overload
     async def fetch_one_async(
-        self, sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
+        self, sql: str, params: Params = None, *,
         model: None = None, as_dict: Literal[False] = False,
-        timeout: float | None | _DefaultTimeout = _DEFAULT,
+        timeout: Timeout = DEFAULT,
     ) -> tuple[Any, ...] | None: ...
 
     @overload
     async def fetch_one_async(
-        self, sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
+        self, sql: str, params: Params = None, *,
         model: None = None, as_dict: Literal[True],
-        timeout: float | None | _DefaultTimeout = _DEFAULT,
+        timeout: Timeout = DEFAULT,
     ) -> dict[str, Any] | None: ...
 
     @overload
     async def fetch_one_async(
-        self, sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
+        self, sql: str, params: Params = None, *,
         model: None = None, as_dict: bool,
-        timeout: float | None | _DefaultTimeout = _DEFAULT,
+        timeout: Timeout = DEFAULT,
     ) -> tuple[Any, ...] | dict[str, Any] | None: ...
 
     async def fetch_one_async(
-        self, sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
+        self, sql: str, params: Params = None, *,
         model: type[ModelT] | None = None, as_dict: bool = False,
-        timeout: float | None | _DefaultTimeout = _DEFAULT,
+        timeout: Timeout = DEFAULT,
     ) -> tuple[Any, ...] | dict[str, Any] | None | ModelT:
         """Fetch the first row or None; model selects validated Pydantic objects.
 

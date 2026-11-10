@@ -69,6 +69,17 @@ impl Pending {
         if self.pid != std::process::id() {
             return Err(fork_error());
         }
+        match self.expired() {
+            Some(error) => {
+                self.cancel(true);
+                Err(error)
+            }
+            None => Ok(()),
+        }
+    }
+    /// The acquisition deadline before the job started, or the query deadline
+    /// after it did; the caller cancels the job when this returns an error.
+    fn expired(&self) -> Option<Error> {
         let started = *self
             .progress
             .as_ref()
@@ -76,7 +87,7 @@ impl Pending {
             .started
             .lock()
             .unwrap_or_else(|e| e.into_inner());
-        let error = match started {
+        match started {
             None if Instant::now() >= self.acquire_deadline => Some(Error::new(
                 ErrorKind::PoolTimeout,
                 "acquire",
@@ -94,12 +105,6 @@ impl Pending {
                 ))
             }
             _ => None,
-        };
-        if let Some(error) = error {
-            self.cancel(true);
-            Err(error)
-        } else {
-            Ok(())
         }
     }
     pub(super) fn detach(mut self) {
@@ -206,32 +211,7 @@ impl Pending {
                 ))
             }
             Err(RecvTimeoutError::Timeout) => {
-                let started = *self
-                    .progress
-                    .as_ref()
-                    .expect("live progress")
-                    .started
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner());
-                let error = match started {
-                    None if Instant::now() >= self.acquire_deadline => Some(Error::new(
-                        ErrorKind::PoolTimeout,
-                        "acquire",
-                        "Pool acquisition deadline expired",
-                    )),
-                    Some(start)
-                        if self
-                            .timeout
-                            .is_some_and(|seconds| start.elapsed().as_secs_f64() >= seconds) =>
-                    {
-                        Some(Error::new(
-                            ErrorKind::QueryTimeout,
-                            "query",
-                            "Query deadline expired; native cleanup may still be pending",
-                        ))
-                    }
-                    _ => None,
-                };
+                let error = self.expired();
                 if let Some(error) = error {
                     self.cancel(true);
                     self.finished = true;
@@ -291,5 +271,69 @@ impl Drop for Pending {
         } else {
             self.cancel(false);
         }
+    }
+}
+
+/// Final outcome of a long-lived operation (a stream or a snapshot session),
+/// cached once observed so every later caller sees the same result.
+pub(super) struct Completion {
+    pub pending: Pending,
+    result: Option<Result<(), Error>>,
+}
+
+impl Completion {
+    pub fn new(pending: Pending) -> Self {
+        Self {
+            pending,
+            result: None,
+        }
+    }
+
+    /// Non-blocking: the outcome if the worker already reported it.
+    pub fn poll(&mut self, phase: &'static str) -> Option<Result<(), Error>> {
+        if self.result.is_none() {
+            self.result = match self.pending.try_result() {
+                Ok(None) => None,
+                Ok(Some(output)) => Some(ready(output, phase)),
+                Err(error) => Some(Err(error)),
+            };
+        }
+        self.result.clone()
+    }
+
+    /// Waits up to `slice` for the outcome without busy polling.
+    pub fn wait(&mut self, slice: Duration, phase: &'static str) -> Option<Result<(), Error>> {
+        if self.result.is_none() && !self.pending.finished && self.pending.pid == std::process::id()
+        {
+            match self
+                .pending
+                .receiver
+                .as_ref()
+                .expect("live receiver")
+                .recv_timeout(slice)
+            {
+                Ok(result) => {
+                    self.pending.finished = true;
+                    self.result = Some(result.and_then(|output| ready(output, phase)));
+                }
+                Err(RecvTimeoutError::Disconnected) => {
+                    self.pending.finished = true;
+                    self.result = Some(Err(Error::new(
+                        ErrorKind::PoolClosed,
+                        "worker",
+                        "Native worker stopped without a result",
+                    )));
+                }
+                Err(RecvTimeoutError::Timeout) => (),
+            }
+        }
+        self.poll(phase)
+    }
+}
+
+fn ready(output: Output, phase: &'static str) -> Result<(), Error> {
+    match output {
+        Output::Ready => Ok(()),
+        _ => Err(Error::new(ErrorKind::Query, phase, "Unexpected completion")),
     }
 }

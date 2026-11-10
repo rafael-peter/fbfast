@@ -9,8 +9,10 @@ extern "C" void fbfast_open_blob(void* handle, const uint8_t* id,
         ISC_QUAD blob_id;
         static_assert(sizeof(blob_id) == 8);
         std::memcpy(&blob_id, id, sizeof(blob_id));
-        // Preserve NONE/OCTETS/binary bytes. For known text encodings ask the
-        // official client/server to transliterate to UTF8; never guess locally.
+        // charset 0 opens the BLOB raw: binary, NONE/OCTETS, and the text
+        // charsets the core converts itself (UTF8, ISO8859_1). Only a raw open
+        // can use a copy that arrived inline with the row (Firebird 5.0.3+).
+        // Other text charsets ask the official filter to transliterate to UTF8.
         const unsigned char bpb[] = {isc_bpb_version1,
             isc_bpb_source_type, 2, 1, 0, isc_bpb_target_type, 2, 1, 0,
             isc_bpb_source_interp, 2, static_cast<unsigned char>(charset),

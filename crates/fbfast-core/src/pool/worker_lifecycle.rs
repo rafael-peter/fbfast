@@ -19,7 +19,7 @@ pub(super) fn idle_cache(
             state.stats.discarded += 1;
             state.stats.cleanup_errors += 1;
             if let Err(error) = cleanup {
-                state.close_errors.push(error);
+                state.push_close_error(error);
             }
         }
     }
@@ -97,4 +97,44 @@ pub(super) fn acquire_timeout() -> Error {
         "acquire",
         "Pool acquisition deadline expired",
     )
+}
+
+/// Wire traffic of the worker's attachment since `mark`; local, no round trip.
+pub(super) fn wire_delta(
+    connection: &mut Option<ExecutionConnection>,
+    mark: &mut fbfast_native::WireStats,
+) -> fbfast_native::WireStats {
+    let Some(current) = connection
+        .as_mut()
+        .and_then(|connection| connection.wire_stats().ok().flatten())
+    else {
+        return fbfast_native::WireStats::default();
+    };
+    let delta = current.since(mark);
+    *mark = current;
+    delta
+}
+
+/// Disarms the cancellation lease if the operation did not (validation or
+/// begin failures precede query cleanup). A raised or failed disarm poisons
+/// the attachment; a disarm failure is attached to the result.
+pub(super) fn settle_lease(
+    lease: &super::controller::Lease<'_>,
+    connection: &mut ExecutionConnection,
+    result: &mut Result<super::Output, Error>,
+) {
+    if lease.is_finished() {
+        return;
+    }
+    match lease.finish() {
+        Ok(true) => connection.poison(),
+        Err(cleanup) => {
+            connection.poison();
+            match result {
+                Err(error) => error.cleanup.push(cleanup),
+                Ok(_) => *result = Err(cleanup),
+            }
+        }
+        Ok(false) => (),
+    }
 }

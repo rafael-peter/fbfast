@@ -1,0 +1,1992 @@
+# fbfast
+
+> Read-only Firebird 5 client for Python (CPython 3.11-3.15) with a Rust core
+> and the official Firebird client bundled in the wheel. One API, sync and
+> asyncio, returns tuples, dicts, validated Pydantic models, native JSON bytes,
+> pyarrow Tables or Polars DataFrames, materialized or streamed.
+
+Key rules: only single SELECT/WITH statements in READ ONLY transactions (not a
+sandbox: use a minimal database role); positional `?` parameters whose Python
+type matches the SQL type; methods without a suffix block and `_async` methods
+(plus `aclose`) are coroutines; always use context managers for pools,
+snapshots, streams and query groups; UTF8 connections only; one operation at a
+time per snapshot or stream; create pools after `fork()`. Reach a named pool
+with `fbfast.get_pool(name)`. The installed package carries the same rules
+offline in `fbfast/llms.txt`.
+
+## Docs
+
+- [README](https://github.com/rafael-peter/fbfast/blob/v0.3.0/README.md): overview, installation, choosing a result type, async services, streams, Arrow/Polars, snapshots
+- [Rules for code assistants](https://github.com/rafael-peter/fbfast/blob/v0.3.0/python/fbfast/llms.txt): hard rules, goal-to-method table, parameter types, defaults, errors and pitfalls in one page
+- [Recipes](https://github.com/rafael-peter/fbfast/blob/v0.3.0/docs/guide/recipes.md): FastAPI with a named pool, NDJSON over HTTP, Polars/Parquet ETL, Arrow streaming, snapshot reports, Pydantic models, concurrent queries
+- [Errors](https://github.com/rafael-peter/fbfast/blob/v0.3.0/docs/guide/errors.md): exception hierarchy, phases, when each error happens and whether retrying helps
+- [Troubleshooting](https://github.com/rafael-peter/fbfast/blob/v0.3.0/docs/guide/troubleshooting.md): wire encryption, roles, charsets, parameter types, slow BLOBs over a WAN, Decimal256 in Polars, timeouts, fork safety
+- [Configuration](https://github.com/rafael-peter/fbfast/blob/v0.3.0/docs/guide/configuration.md): every FirebirdConfig option with its FB_* variable and default
+- [Performance](https://github.com/rafael-peter/fbfast/blob/v0.3.0/docs/guide/performance.md): latency, round trips, BLOBs, compression and when to use each output
+- [API reference](https://github.com/rafael-peter/fbfast/blob/v0.3.0/docs/guide/api.md): signatures and docstrings of the public API
+
+## Examples
+
+- [basic_query.py](https://github.com/rafael-peter/fbfast/blob/v0.3.0/examples/basic_query.py): configuration from FB_* variables, fetch_val/fetch_one/fetch_all, explain, errors, stats and diagnostics
+- [typed_models.py](https://github.com/rafael-peter/fbfast/blob/v0.3.0/examples/typed_models.py): Pydantic models with upper-case names or validation aliases, sync and async
+- [concurrent_queries.py](https://github.com/rafael-peter/fbfast/blob/v0.3.0/examples/concurrent_queries.py): Query objects with run_all, run_many and their async forms
+- [snapshot_report.py](https://github.com/rafael-peter/fbfast/blob/v0.3.0/examples/snapshot_report.py): consistent reads with pool.snapshot(), including a stream
+- [json_stream.py](https://github.com/rafael-peter/fbfast/blob/v0.3.0/examples/json_stream.py): fetch_json and NDJSON streaming, sync and async
+- [polars_etl.py](https://github.com/rafael-peter/fbfast/blob/v0.3.0/examples/polars_etl.py): fetch_polars to Parquet, Decimal256 handling, Arrow stream to Parquet
+
+## Optional
+
+- [Full documentation in one file](https://github.com/rafael-peter/fbfast/blob/v0.3.0/llms-full.txt): this index with the rules and guides inlined
+- [Security model](https://github.com/rafael-peter/fbfast/blob/v0.3.0/docs/security.md): read-only gates, privileges, result limits, credentials, Firebird versions
+- [Release notes](https://github.com/rafael-peter/fbfast/tree/v0.3.0/docs/releases): changes and migration tables per version
+- [Development](https://github.com/rafael-peter/fbfast/blob/v0.3.0/docs/development.md): building from source, checks and the disposable test fixture
+- [Contributor and agent rules](https://github.com/rafael-peter/fbfast/blob/v0.3.0/AGENTS.md): verification commands and repository conventions
+
+---
+
+<!-- Source: https://github.com/rafael-peter/fbfast/blob/v0.3.0/python/fbfast/llms.txt -->
+
+# fbfast 0.3.0
+
+> Read-only Firebird 5 client for Python with a Rust core and the official
+> Firebird client bundled in the wheel. Returns tuples, dicts, Pydantic models,
+> native JSON bytes, pyarrow Tables or Polars DataFrames; sync and asyncio.
+> This file ships inside the package for code assistants working offline.
+
+Scope: SELECT/WITH queries against Firebird 5.0.x servers over TCP. No writes,
+no DDL, no ORM, no embedded connections. CPython 3.11-3.15 with the GIL on
+macOS (arm64, x86_64), Linux glibc (x86_64, aarch64) and Windows x86_64.
+Install: `pip install fbfast`; extras `fbfast[pydantic]`, `fbfast[arrow]`, `fbfast[polars]`.
+
+## Hard rules
+
+1. Read-only, but not a sandbox. Only single SELECT/WITH statements run, in
+   READ ONLY transactions; selectable procedures can still have side effects.
+   Use a database role limited to the tables needed. Never pass SQL from users
+   or LLM output; pick from an allowlist and bind values.
+2. Parameters are positional `?` placeholders with a list or tuple:
+   `pool.fetch_all("... WHERE ID = ? AND STATUS = ?", [10, "OPEN"])`.
+   No named parameters, no string formatting of values into SQL.
+   Values must match the SQL type exactly (see "Parameter types").
+3. Naming: no suffix = blocking; `_async` suffix (and `aclose`) = coroutine.
+   `pool.close()` / `await pool.aclose()`, `pool.warmup()` / `await pool.warmup_async()`,
+   `init_pool()` / `await init_pool_async()`, `close_pool()` / `await close_pool_async()`.
+4. Always use context managers: `with Pool(config) as pool`, `with pool.snapshot() as snap`,
+   `with pool.stream(...) as batches`, `with pool.run_many(...) as group`
+   (`async with` for the async forms). Otherwise close explicitly in `finally`.
+5. Connection charset is UTF8 only (default). Column charsets are converted by the server.
+6. One operation at a time per snapshot and per stream; a second raises
+   `ConcurrentUseError`. Do not share them between threads or tasks.
+7. Create pools after `fork()` (in each worker). Importing before fork is fine.
+8. Canonical access to a named pool is `fbfast.get_pool(name).method(...)`.
+   Module functions such as `fbfast.fetch_all(sql, pool="name")` are frozen shortcuts.
+
+## Minimal patterns
+
+```python
+import fbfast
+
+config = fbfast.FirebirdConfig()            # reads FB_HOST, FB_DATABASE, FB_USER, FB_PASSWORD... and .env
+with fbfast.Pool(config) as pool:
+    rows = pool.fetch_all("SELECT ID, NAME FROM CUSTOMERS WHERE CITY = ?", ["Recife"])
+
+async with fbfast.Pool(config) as pool:
+    row = await pool.fetch_one_async("SELECT ID, NAME FROM CUSTOMERS WHERE ID = ?", [1], as_dict=True)
+
+# Application-wide named pool (e.g. FastAPI lifespan), reached anywhere by name:
+await fbfast.init_pool_async(config, name="reports")
+total = await fbfast.get_pool("reports").fetch_val_async("SELECT COUNT(*) FROM ORDERS")
+await fbfast.close_pool_async("reports")
+```
+
+## Goal -> method (on Pool and Snapshot; each has an `_async` twin)
+
+| Goal | Method | Returns |
+| --- | --- | --- |
+| All rows | `fetch_all(sql, params)` | `list[tuple]` |
+| All rows as dicts | `fetch_all(sql, params, as_dict=True)` | `list[dict[str, Any]]` |
+| Validated models | `fetch_all(sql, params, model=Order)` | `list[Order]` |
+| First row or None | `fetch_one(...)` (same `as_dict=`/`model=`) | `tuple`/`dict`/`Order`/`None` |
+| First column of first row | `fetch_val(sql, params)` | value or `None` |
+| JSON array built in Rust | `fetch_json(sql, params)` | `bytes` |
+| pyarrow.Table | `fetch_arrow(sql, params)` | needs `fbfast[arrow]` |
+| polars.DataFrame | `fetch_polars(sql, params, unsupported="error")` | needs `fbfast[polars]` |
+| Large result in row batches | `with stream(sql, params, batch_rows=, as_dict=) as b: for rows in b` | `list` per batch |
+| NDJSON / JSON chunks | `with stream_json(sql, params, format="ndjson") as c: for chunk in c` | `bytes` per chunk |
+| Arrow batches | `with stream_arrow(sql, params) as s: for batch in s` | `ArrowBatch` |
+| Execution plan | `explain(sql, params)` | `str` |
+| Consistent multi-query read | `with pool.snapshot(timeout=) as snap:` | `Snapshot` (same methods) |
+| Several queries at once | `pool.run_all([Query...], concurrency=, timeout=, fail_fast=True)` | `Results`; `results[q]` |
+| Results as they finish | `with pool.run_many(queries) as g: for done in g: done.result()` | `Done` |
+| Async groups | `await pool.run_all_async(...)`, `async with pool.run_many_async(...) as g: async for done in g` | |
+| Pool counters | `pool.stats()` | `PoolStats` |
+| Per-query timings | `pool.diagnostics()` with `FirebirdConfig(diagnostics=True)` | `list[QueryTrace]` |
+| Negotiated session | `pool.session_info()` | `SessionInfo` or `None` |
+| After DDL | `pool.clear_statement_cache()` | |
+
+Async streams: `async with pool.stream_async(...) as b: async for rows in b`
+(likewise `stream_json_async`, `stream_arrow_async`). Sync streams close with
+`close()`, async ones with `aclose()`.
+
+Query factories for groups: `fbfast.Query.fetch_all / fetch_one / fetch_val /
+fetch_json / fetch_arrow / fetch_polars / explain`, same arguments as the pool
+methods plus `timeout=`. Each Query object is a distinct key; using the same
+object twice raises `ArgumentError`. Groups run only on a Pool, never inside a
+snapshot, and each query has its own transaction. `concurrency` defaults to and
+is capped at `pool_size`. Group `timeout=` cancels unfinished queries; leaving a
+`run_many` block cancels them too. Prefer `run_all_async` to `asyncio.gather`:
+gathering more than `pool_size + max_waiters` (264 by default) calls raises `PoolBusyError`.
+
+## Parameter types
+
+`str` for CHAR/VARCHAR; `int` for SMALLINT/INTEGER/BIGINT/INT128;
+`decimal.Decimal` or `int` for NUMERIC/DECIMAL (`float` rejected); `float` for
+DOUBLE/FLOAT (`int` rejected); `datetime.date` for DATE; `datetime.datetime` for
+TIMESTAMP; `datetime.time` for TIME; `bool` for BOOLEAN; `None` for NULL.
+Strings are never parsed into dates or numbers. A mismatch raises
+`DataConversionError` (phase `bind`).
+
+## Results and types
+
+- Unquoted column names are UPPER CASE (`ID`, `NAME`). Dicts, models, JSON
+  records, Arrow and Polars need unique column names: alias duplicates.
+- NUMERIC/DECIMAL/INT128 -> exact `Decimal`/`int`; DECFLOAT -> `Decimal`;
+  TIMESTAMP WITH TIME ZONE -> aware `datetime`; TIME WITH TIME ZONE ->
+  `fbfast.TimeWithZone`; text BLOB -> `str`; binary BLOB -> `bytes`;
+  charset NONE text -> `bytes` unless `fallback_charset="UTF8"`.
+- CHAR keeps trailing spaces unless `trim_char=True` or `TRIM()` in SQL.
+- JSON defaults: exact decimals and BIGINT/INT128 as strings (`json_decimals="string"`,
+  `json_integers="safe"`), binary rejected (`json_binary="error"`), NaN/Infinity rejected.
+- `model=` needs Pydantic v2; validation runs after fetching (async: in a thread)
+  and raises `pydantic.ValidationError`. Streams do not accept `model=`.
+
+## Limits and defaults
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `pool_size` / `min_idle` | 8 / 2 | Max connections / kept ready |
+| `max_waiters` | 256 | Queue length; full -> `PoolBusyError` |
+| `acquire_timeout` | 5.0 s | Wait for a ready connection -> `PoolTimeoutError` |
+| `connect_timeout` | 5.0 s | Attach + handshake of one connection |
+| `query_timeout` | 30.0 s | Per query incl. fetch, conversion, stream consumption; `timeout=None` disables |
+| `snapshot_timeout` | 300.0 s | Whole snapshot scope incl. time between queries |
+| `stream_idle_timeout` | 30.0 s | Stream waiting for its consumer |
+| `max_result_bytes` | 512 MiB | Per materialized result; not for streams |
+| `max_result_rows` | None | Per materialized result |
+| `max_blob_bytes` | 64 MiB | Per BLOB value, streams included |
+| `fetch_size` / `batch_bytes` | 5000 rows / 4 MiB | Batch targets (also stream `batch_rows` default) |
+| `wire_crypt` | "required" | "enabled" allows plaintext; "disabled" refuses encryption |
+| `health_check_after` | 30.0 s | Idle ping in the background (keepalive) |
+| `ready_transaction_timeout` | 2.0 s | Keep the next query's transaction ready; None disables |
+
+## Configuration
+
+`FirebirdConfig(**options)` precedence: explicit argument > `FB_<NAME>` env var >
+`.env` in the current directory > default. Required: `database`, `user`,
+`password` (env `FB_DATABASE`, `FB_USER`, `FB_PASSWORD`). Common: `host`
+("localhost"), `port` (3050), `role`, `session_time_zone` ("UTC"),
+`wire_compression` (False), `fallback_charset`, `trim_char`, `diagnostics`,
+`max_inline_blob_size` (client default 65535, 0 disables), `blob_cache_size`,
+`env_file` (path or False). `FirebirdConfig.from_env("FB_BI_")` reads another
+prefix. Config is immutable; `read_only=False` raises `UnsupportedFeatureError`;
+unknown options raise `ConfigurationError`. Construction never connects; `Pool()`
+is lazy; entering `with Pool(...)` opens `min_idle` connections and fails fast.
+
+## Errors (all derive from fbfast.FbFastError; attributes phase, sqlstate, native_codes, cleanup_errors)
+
+| Exception | Retry? | Cause |
+| --- | --- | --- |
+| `ConfigurationError` | no | Bad/missing/unknown option |
+| `UnsupportedFeatureError` | no | `read_only=False`, a connection charset other than UTF8 |
+| `UnsupportedStatementError` | no | Not a single read-only SELECT/WITH (phase `validate`) |
+| `UsageError` (RuntimeError) | no | Snapshot/stream used outside its `with`, entered twice |
+| `ArgumentError` (ValueError, TypeError) | no | Invalid argument, bad `model=`, non-Query in run_all |
+| `PoolBusyError` | later | Queue full or too many pending async calls |
+| `ConcurrentUseError` (PoolBusyError) | no | Snapshot/stream used twice at once |
+| `PoolTimeoutError` (TimeoutError) | later | No connection within `acquire_timeout` |
+| `PoolClosedError` | no | Pool closed |
+| `PoolNotInitializedError` / `PoolAlreadyInitializedError` | no | Named-pool registry misuse |
+| `ForkSafetyError` | no | Pool/stream/snapshot used after fork |
+| `QueryError` | usually no | Firebird rejected the SQL; see `sqlstate` |
+| `QueryTimeoutError` (QueryError, TimeoutError) | longer deadline | Query, snapshot, group or stream-idle deadline |
+| `DatabaseConnectionError` (QueryError, ConnectionError) | yes | Attach failed or connection lost (SQLSTATE 08xxx); SQL is never repeated by fbfast |
+| `AuthenticationError` | no | Wrong credentials, or wire_crypt mismatch (code 335545064) |
+| `RoleNotActiveError` | no | Role missing or not granted |
+| `DataConversionError` | no | Parameter type/count, duplicate column names, inexact value |
+| `UnsupportedTypeError` | no | ARRAY, or Decimal256 in `fetch_polars` |
+| `ResultLimitError` | no | `max_result_bytes`/`max_result_rows`/`max_blob_bytes` exceeded |
+| `QueryCancelledError` | depends | Stream closed, group cancelled, pool shut down |
+| `CleanupError` | no | Closing failed; connection discarded |
+
+Deferred cleanup: a pooled query replies first; the session reset runs afterwards
+and also starts the next query's transaction, so a busy connection answers in
+1 round trip (2 after `ready_transaction_timeout`, 2 s, of idleness). A cleanup
+failure is counted in `stats()["cleanup_errors"]` and the caller keeps its complete
+result. If the link drops within those 2 s, the next query on that connection
+raises `DatabaseConnectionError` (SQL already sent is never repeated); later, a
+dead connection is replaced transparently. Any error inside a snapshot ends it;
+later calls and leaving the block re-raise it.
+
+## Pitfalls
+
+- BLOBs over a WAN: inline BLOBs need server >= 5.0.3 (prefer 5.0.4+). Check
+  `pool.session_info()["inline_blobs"]`. UTF8/ISO8859_1/NONE/OCTETS/binary BLOBs
+  travel inline up to 65535 bytes; other text charsets (WIN1252...) cost a round
+  trip per value. CAST short text to a small VARCHAR.
+- Decimal256 in Polars: SUM over BIGINT/NUMERIC(18,x), BIGINT*BIGINT, INT128 and
+  NUMERIC(38,x) are INT128-based. `fetch_polars` raises `UnsupportedTypeError`;
+  CAST in SQL or pass `unsupported="string"` (exact decimal text).
+- Duplicate column names (joins: `O.ID, C.ID`) fail for dicts, models, JSON
+  records, Arrow and Polars with `DataConversionError`. Alias them.
+- Pydantic fields: name them in UPPER CASE or use `Field(validation_alias="ID")`.
+- Snapshot deadline: `snapshot_timeout` (300 s) counts Python time between queries;
+  `timeout=None` on a query does not disable it.
+- Streams: `query_timeout` covers the whole stream; pass `timeout=` for long
+  exports. Keep HTTP stream contexts inside the response generator.
+- Wire compression: `wire_compression=True` only requests it; verify
+  `session_info()["wire_compressed"]`.
+- Upgrading from 0.2: `await pool.close()` is now a TypeError; use `await pool.aclose()`.
+
+## Documentation (pinned to v0.3.0)
+
+- Recipes: https://github.com/rafael-peter/fbfast/blob/v0.3.0/docs/guide/recipes.md
+- Errors: https://github.com/rafael-peter/fbfast/blob/v0.3.0/docs/guide/errors.md
+- Troubleshooting: https://github.com/rafael-peter/fbfast/blob/v0.3.0/docs/guide/troubleshooting.md
+- Configuration: https://github.com/rafael-peter/fbfast/blob/v0.3.0/docs/guide/configuration.md
+- Performance: https://github.com/rafael-peter/fbfast/blob/v0.3.0/docs/guide/performance.md
+- API reference: https://github.com/rafael-peter/fbfast/blob/v0.3.0/docs/guide/api.md
+- Security model: https://github.com/rafael-peter/fbfast/blob/v0.3.0/docs/security.md
+
+---
+
+<!-- Source: https://github.com/rafael-peter/fbfast/blob/v0.3.0/docs/guide/recipes.md -->
+
+# Recipes
+
+Short, complete patterns for common jobs. Every snippet uses the public API of
+fbfast 0.3.0; the runnable versions live in
+[`examples/`](https://github.com/rafael-peter/fbfast/tree/v0.3.0/examples).
+Table and column names such as `ORDERS` stand for your own schema.
+
+Conventions used below:
+
+- Methods without a suffix block; methods ending in `_async` (and `aclose`) are
+  coroutines.
+- Parameters are positional `?` placeholders, passed as a list or tuple.
+- Pools, snapshots and streams are always used as context managers, or closed
+  explicitly in a `finally`/lifespan.
+- `get_pool(name).method(...)` is the canonical way to reach a named pool; the
+  module functions such as `fbfast.fetch_all(sql, pool=name)` are shortcuts for it.
+
+## FastAPI with a named pool
+
+Open the pool once in the application lifespan, reach it by name in routes,
+and close it on shutdown.
+
+```python
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+from pydantic import BaseModel, Field
+
+import fbfast
+
+
+class Order(BaseModel):
+    id: int = Field(validation_alias="ID")
+    customer: str = Field(validation_alias="CUSTOMER")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # FirebirdConfig() reads FB_* variables (or FB_REPORTS_* with from_env).
+    await fbfast.init_pool_async(fbfast.FirebirdConfig(), name="reports")
+    try:
+        yield
+    finally:
+        await fbfast.close_pool_async("reports")
+
+
+app = FastAPI(lifespan=lifespan)
+
+
+def reports() -> fbfast.Pool:
+    return fbfast.get_pool("reports")  # never opens a pool implicitly
+
+
+@app.get("/orders/count")
+async def count_orders(status: str = "OPEN") -> int:
+    return await reports().fetch_val_async(
+        "SELECT COUNT(*) FROM ORDERS WHERE STATUS = ?", [status]
+    )
+
+
+@app.get("/orders/{order_id}")
+async def get_order(order_id: int) -> Order | None:
+    return await reports().fetch_one_async(
+        "SELECT ID, CUSTOMER FROM ORDERS WHERE ID = ?", [order_id], model=Order
+    )
+```
+
+- `init_pool_async` warms the pool (opens `min_idle` connections) and fails
+  fast if the database is unreachable, so a misconfigured service does not start.
+- Run one pool per process. With several Uvicorn/Gunicorn workers, the lifespan
+  runs in each worker after it was forked, which is what fbfast requires.
+- Every `*_async` call runs off the event loop. More concurrent requests than
+  `pool_size + max_waiters` raise `PoolBusyError` immediately; map it to HTTP 503.
+- Synchronous scripts use the same registry: `fbfast.init_pool(config, name=...)`
+  and `fbfast.close_pool(name)`.
+
+## NDJSON streaming over HTTP
+
+`stream_json_async` writes newline-delimited JSON in Rust and yields `bytes`
+chunks that always end on a complete record. Keep the stream context **inside**
+the response generator, so it opens when the body starts and closes when the
+body ends or the client disconnects.
+
+```python
+from fastapi.responses import StreamingResponse
+
+
+@app.get("/orders.ndjson")
+async def export_orders(status: str = "OPEN") -> StreamingResponse:
+    async def body():
+        async with reports().stream_json_async(
+            "SELECT ID, CUSTOMER, TOTAL, CREATED_AT FROM ORDERS WHERE STATUS = ?",
+            [status],
+            timeout=None,  # no total deadline; stream_idle_timeout still applies
+        ) as chunks:
+            async for chunk in chunks:
+                yield chunk
+
+    return StreamingResponse(body(), media_type="application/x-ndjson")
+```
+
+- `query_timeout` (30 s by default) covers the whole stream, including the time
+  the client takes to read it. Pass `timeout=` for long exports. A consumer that
+  stops reading is bounded separately by `stream_idle_timeout`.
+- An error after the headers were sent can only terminate the body; it cannot
+  become an error status. Validate parameters before returning the response.
+- Exact decimals are JSON strings and BIGINT/INT128 are strings by default
+  (`json_decimals="string"`, `json_integers="safe"`), so JavaScript clients do
+  not lose precision. Pass `"number"` to either option to emit numbers.
+- For a single JSON document use `fetch_json_async` (returns `bytes`) and
+  `Response(content=..., media_type="application/json")`.
+
+## ETL to Polars and Parquet
+
+`fetch_polars` builds the DataFrame through Arrow without Python rows and
+without requiring PyArrow:
+
+```python
+from datetime import datetime
+
+import fbfast
+
+with fbfast.Pool(fbfast.FirebirdConfig()) as pool:
+    frame = pool.fetch_polars(
+        "SELECT ID, CUSTOMER, TOTAL, CREATED_AT FROM ORDERS WHERE CREATED_AT >= ?",
+        [datetime(2026, 1, 1)],  # a TIMESTAMP parameter takes a datetime, not a str
+    )
+    frame.write_parquet("orders.parquet")
+```
+
+When the result does not fit comfortably in memory, stream Arrow batches into
+the Parquet writer instead (requires `fbfast[arrow]`):
+
+```python
+import pyarrow as pa
+import pyarrow.parquet as pq
+
+with pool.stream_arrow("SELECT ID, CUSTOMER, TOTAL FROM ORDERS", batch_rows=50_000) as stream:
+    reader = pa.RecordBatchReader.from_stream(stream)
+    with pq.ParquetWriter("orders.parquet", reader.schema) as writer:
+        for batch in reader:
+            writer.write_batch(batch)
+```
+
+- Install the extras you need: `fbfast[polars]`, `fbfast[arrow]`, or both.
+- `SUM()` over `NUMERIC(18, x)` or `BIGINT`, and `BIGINT * BIGINT`, are INT128
+  in Firebird 4+, which Arrow represents as Decimal256. Polars cannot hold
+  Decimal256, so `fetch_polars` raises `UnsupportedTypeError` unless you
+  `CAST(SUM(TOTAL) AS NUMERIC(18, 2))` in SQL or pass `unsupported="string"`
+  to receive exact decimal text.
+- `max_result_bytes` (512 MiB by default) bounds `fetch_polars`/`fetch_arrow`;
+  streams are bounded by `batch_bytes` and `prefetch_batches` instead.
+
+## Arrow streaming
+
+`stream_arrow` yields owned `ArrowBatch` objects. They implement the Arrow C
+Data Interface, so PyArrow, Polars and other Arrow consumers can read them
+without copying, and they remain valid after the stream closes.
+
+```python
+import polars as pl
+
+with pool.stream_arrow("SELECT ID, TOTAL FROM ORDERS", batch_rows=10_000) as batches:
+    print(batches.schema.names)  # available right after entering, even for empty results
+    for batch in batches:
+        frame = pl.DataFrame(batch)  # or pyarrow.record_batch(batch)
+        process(frame)
+```
+
+The async variant iterates batches; it has no blocking C Stream export:
+
+```python
+async with pool.stream_arrow_async("SELECT ID, TOTAL FROM ORDERS") as batches:
+    async for batch in batches:
+        await process_async(batch)  # ArrowBatch: num_rows, num_columns, nbytes, schema
+```
+
+Use either iteration or the C Stream export
+(`pa.RecordBatchReader.from_stream(stream)`) on a given sync stream, not both.
+
+## A report with a snapshot
+
+A snapshot reserves one connection with a READ ONLY SNAPSHOT transaction, so
+every query inside sees the same committed data. It is also the fastest way to
+run many small sequential queries over a slow link: each costs about one round
+trip.
+
+```python
+with pool.snapshot(timeout=120.0) as snap:
+    totals = snap.fetch_one(
+        "SELECT COUNT(*) AS ORDERS, SUM(TOTAL) AS REVENUE FROM ORDERS WHERE STATUS = ?",
+        ["PAID"], as_dict=True,
+    )
+    by_customer = snap.fetch_all(
+        "SELECT CUSTOMER, SUM(TOTAL) AS REVENUE FROM ORDERS WHERE STATUS = ? "
+        "GROUP BY CUSTOMER ORDER BY 2 DESC ROWS 10",
+        ["PAID"],
+    )
+    with snap.stream("SELECT ID, TOTAL FROM ORDERS WHERE STATUS = ?", ["PAID"]) as batches:
+        for rows in batches:
+            write_detail(rows)
+```
+
+The same code works asynchronously with `async with pool.snapshot() as snap:`
+and the `*_async` methods.
+
+- Only one operation runs at a time inside a snapshot, including an open stream;
+  a second one raises `ConcurrentUseError`. Do not share a snapshot between
+  threads or tasks; use `run_all` on the pool for parallel work.
+- The snapshot deadline (`snapshot_timeout`, 300 s by default, or `timeout=`)
+  counts the time your code spends between queries. Each query inside still
+  has its own `query_timeout`.
+- Any error ends the snapshot: later calls on it, and leaving the `with` block,
+  raise that error again. Handle errors outside the block and open a new snapshot.
+
+## Pydantic models
+
+Pass `model=` to `fetch_all`/`fetch_one` (and their async versions, snapshots
+and `Query` objects). The return type follows the class: `list[Order]` and
+`Order | None`.
+
+```python
+from decimal import Decimal
+
+from pydantic import BaseModel, Field
+
+
+class Order(BaseModel):
+    id: int = Field(validation_alias="ID")
+    customer: str = Field(validation_alias="CUSTOMER")
+    total: Decimal = Field(validation_alias="TOTAL")
+
+
+orders = pool.fetch_all("SELECT ID, CUSTOMER, TOTAL FROM ORDERS WHERE STATUS = ?",
+                        ["OPEN"], model=Order)
+```
+
+- Install with `pip install "fbfast[pydantic]"` (Pydantic v2).
+- Firebird returns unquoted names in UPPER CASE (`ID`, `CUSTOMER`). Either name
+  the fields that way or map them with `Field(validation_alias=...)`, as above.
+  Column names are never renamed silently.
+- Every column name must be unique: alias expressions and joined columns
+  (`SELECT O.ID, C.ID AS CUSTOMER_ID ...`), or the call raises `DataConversionError`.
+- Validation runs after fetching, outside the query deadline; async validation
+  runs in a worker thread. A row that fails raises `pydantic.ValidationError`.
+- Streams do not accept `model=`; validate each batch yourself
+  (`stream(..., as_dict=True)` + `Order.model_validate(row)`).
+
+## Several queries at once
+
+Describe each query with a `fbfast.Query` factory, then run them together.
+At most `concurrency` queries hold a connection at once (default and maximum:
+`pool_size`); the rest wait outside the pool queue, so other callers keep being
+served and there is no limit on the number of queries.
+
+```python
+from fbfast import Query
+
+open_orders = Query.fetch_all("SELECT ID, CUSTOMER, TOTAL FROM ORDERS WHERE STATUS = ?",
+                              ["OPEN"], model=Order)
+revenue = Query.fetch_val("SELECT SUM(TOTAL) FROM ORDERS WHERE STATUS = ?", ["PAID"])
+daily = Query.fetch_polars("SELECT CAST(CREATED_AT AS DATE) AS ORDER_DAY, COUNT(*) AS N "
+                           "FROM ORDERS GROUP BY 1")
+
+results = pool.run_all([open_orders, revenue, daily], timeout=30.0)
+results[open_orders]  # list[Order], typed by the Query
+results[revenue]      # the value (fetch_val is typed Any)
+results[daily]        # polars.DataFrame
+```
+
+Handle each result as soon as it finishes with `run_many`:
+
+```python
+with pool.run_many([open_orders, revenue, daily], concurrency=2) as group:
+    for done in group:  # completion order
+        print(done.index, done.query.sql, done.result())
+```
+
+And in async code:
+
+```python
+results = await pool.run_all_async([open_orders, revenue, daily])
+
+async with pool.run_many_async(queries) as group:
+    async for done in group:
+        handle(done.query, done.result())
+```
+
+- Factories: `Query.fetch_all`, `fetch_one`, `fetch_val`, `fetch_json`,
+  `fetch_arrow`, `fetch_polars`, `explain`. Streams are not available in groups.
+- Each `Query` object is a distinct key; create two objects to run the same SQL
+  twice. Passing the same object twice raises `ArgumentError`.
+- `fail_fast=True` (default) cancels the rest on the first error and raises it;
+  `fail_fast=False` runs everything and collects failures in `results.errors`.
+- `timeout=` is a deadline for the whole group and cancels what is unfinished;
+  each `Query` keeps its own `timeout=`. Leaving a `run_many` block cancels
+  unfinished queries.
+- Prefer `run_all_async` over `asyncio.gather` of many `*_async` calls: a plain
+  `gather` of more than `pool_size + max_waiters` (264 by default) calls fails
+  with `PoolBusyError`.
+- Groups run on the pool, not inside a snapshot. Each query uses its own
+  transaction, so the results are not a consistent snapshot of each other.
+
+## See also
+
+- [Errors](https://github.com/rafael-peter/fbfast/blob/v0.3.0/docs/guide/errors.md) and [troubleshooting](https://github.com/rafael-peter/fbfast/blob/v0.3.0/docs/guide/troubleshooting.md)
+- [Configuration](https://github.com/rafael-peter/fbfast/blob/v0.3.0/docs/guide/configuration.md), [performance](https://github.com/rafael-peter/fbfast/blob/v0.3.0/docs/guide/performance.md) and the
+  [API reference](https://github.com/rafael-peter/fbfast/blob/v0.3.0/docs/guide/api.md)
+
+---
+
+<!-- Source: https://github.com/rafael-peter/fbfast/blob/v0.3.0/docs/guide/errors.md -->
+
+# Errors
+
+Every error raised by fbfast derives from `fbfast.FbFastError`. The classes are
+defined in [`python/fbfast/_errors.py`](https://github.com/rafael-peter/fbfast/blob/v0.3.0/python/fbfast/_errors.py)
+and exported from the `fbfast` namespace. Some also derive from a built-in
+exception, so generic handlers keep working:
+
+- `QueryTimeoutError` and `PoolTimeoutError` are also `TimeoutError`.
+- `DatabaseConnectionError` is also `ConnectionError`.
+- `UsageError` is also `RuntimeError`; `ArgumentError` is also `ValueError` and `TypeError`.
+
+Two errors that are **not** `FbFastError` can reach you from fbfast calls:
+`pydantic.ValidationError` when a row does not fit your `model=` (rows are never
+skipped silently), and `ImportError` when an optional extra (`pydantic`, `arrow`,
+`polars`) is not installed.
+
+## Hierarchy
+
+```text
+FbFastError
+├── ConfigurationError
+├── UnsupportedFeatureError
+├── UnsupportedStatementError
+├── ReadOnlyViolationError
+├── ClientLibraryError
+├── UsageError                 (also RuntimeError)
+├── ArgumentError              (also ValueError, TypeError)
+├── PoolError
+│   ├── ForkSafetyError
+│   ├── PoolClosedError
+│   ├── PoolBusyError
+│   │   └── ConcurrentUseError
+│   ├── PoolTimeoutError       (also TimeoutError)
+│   ├── PoolNotInitializedError
+│   └── PoolAlreadyInitializedError
+├── QueryCancelledError
+├── QueryError
+│   ├── QueryTimeoutError      (also TimeoutError)
+│   └── DatabaseConnectionError (also ConnectionError)
+├── AuthenticationError
+├── RoleNotActiveError
+├── UnsupportedServerError
+├── DataConversionError
+├── UnsupportedTypeError
+├── ResultLimitError
+└── CleanupError
+```
+
+## Reference
+
+"Retry?" answers one question: can running the same call again, unchanged,
+succeed? fbfast itself never repeats SQL that already reached the server.
+
+| Exception | Base classes | Typical `phase` | When it happens | Retry? |
+| --- | --- | --- | --- | --- |
+| `ConfigurationError` | `FbFastError` | `config`, `registry` | Missing, invalid or unknown `FirebirdConfig` option, unreadable `.env`, empty pool name. | No. Fix the configuration. |
+| `UnsupportedFeatureError` | `FbFastError` | `config` | `read_only=False`, or a connection charset other than UTF8. | No. |
+| `UnsupportedStatementError` | `FbFastError` | `validate` | The SQL is not a single read-only `SELECT`/`WITH` query (DML, DDL, `EXECUTE BLOCK`, `WITH LOCK`, several statements). Nothing was sent to the server. | No. |
+| `ReadOnlyViolationError` | `FbFastError` | `validate`, `attach` | A write was detected, or the session handshake did not confirm a READ ONLY transaction. | No. |
+| `ClientLibraryError` | `FbFastError` | `load_client` | The Firebird client library could not be loaded or is older than 5.0.3. | No. Reinstall the wheel or fix `client_library`. |
+| `UsageError` | `FbFastError`, `RuntimeError` | `python` | API misuse: querying a snapshot or stream outside its `with` block, entering one twice, `concurrency=0` in `run_all`. | No. Fix the code. |
+| `ArgumentError` | `FbFastError`, `ValueError`, `TypeError` | `python` | Invalid argument: `model=` that is not a Pydantic v2 model, a non-`Query` in `run_all`, the same `Query` object twice, `unsupported=` other than `"error"`/`"string"`. | No. |
+| `ForkSafetyError` | `PoolError` | `lifecycle`, `registry`, `async_runtime` | A pool, snapshot or stream created before `fork()` was used in the child. | No. Create pools after forking. |
+| `PoolClosedError` | `PoolError` | `acquire`, `snapshot`, `stream`, `worker` | The pool is closing or closed; a snapshot already ended (any error ends it). | No. Use a new pool or a new snapshot. |
+| `PoolBusyError` | `PoolError` | `acquire`, `delivery` | The waiting queue is full (`max_waiters`), or more async calls are pending than `pool_size + max_waiters`. | Yes, after a pause. For many queries use `run_all_async`. |
+| `ConcurrentUseError` | `PoolBusyError` | `snapshot`, `stream` | A snapshot or stream was used by two operations at once (for example a query while a stream from the same snapshot is open). | No. Serialize the use. |
+| `PoolTimeoutError` | `PoolError`, `TimeoutError` | `acquire`, `attach`, `close` | No connection became ready within `acquire_timeout` (or `connect_timeout` for opening one); closing did not finish within `close_timeout`. | Yes, later. Check pool size and the server. |
+| `PoolNotInitializedError` | `PoolError` | `registry` | `get_pool(name)` found no ready pool (never initialized, still opening or closing). | No. Call `init_pool` first. |
+| `PoolAlreadyInitializedError` | `PoolError` | `registry` | `init_pool(name=...)` with a name that is registered, opening or draining. | No. |
+| `QueryCancelledError` | `FbFastError` | `query`, `stream`, `delivery` | The operation was cancelled: its stream was closed, its group was cancelled or the pool shut down. | Only if the cancellation was not intended. |
+| `QueryError` | `FbFastError` | `prepare`, `execute`, `fetch`, ... | Firebird rejected or failed the statement (unknown column, missing privilege, arithmetic overflow...). Inspect `sqlstate` and `native_codes`. | Usually no. |
+| `QueryTimeoutError` | `QueryError`, `TimeoutError` | `query`, `fetch`, `snapshot`, `group`, `stream_idle` | The deadline expired: `query_timeout` or `timeout=`, the snapshot deadline, a group `timeout=`, or `stream_idle_timeout`. | Only with a longer deadline or a cheaper query. |
+| `DatabaseConnectionError` | `QueryError`, `ConnectionError` | `attach`, any (SQLSTATE `08xxx`) | The connection could not be opened or was lost. A failure before any SQL is sent is already retried once inside `acquire_timeout`. | Yes. A plain `SELECT` is idempotent; fbfast did not repeat it. |
+| `AuthenticationError` | `FbFastError` | `attach` | SQLSTATE `28000`: wrong user or password, or incompatible wire encryption (`native_codes` contains `335545064`). | No. |
+| `RoleNotActiveError` | `FbFastError` | `attach` | `role=` is not active for the session: wrong name or no `GRANT role TO user`. | No. |
+| `UnsupportedServerError` | `FbFastError` | `attach` | The server is not Firebird 5.0.x. | No. |
+| `DataConversionError` | `FbFastError` | `bind`, `describe`, `decode`, `python_conversion`, `polars` | A value cannot be converted exactly; wrong number or type of parameters; duplicate column names where names are keys (dicts, models, JSON records, Arrow); invalid bytes for `fallback_charset`. | No. |
+| `UnsupportedTypeError` | `FbFastError` | `describe`, `decode` | A column or parameter type fbfast does not convert (ARRAY), or Decimal256 in `fetch_polars` without `unsupported="string"`. | No. |
+| `ResultLimitError` | `FbFastError` | `materialize`, `read_blob` | A materialized result exceeded `max_result_bytes` or `max_result_rows`, or one BLOB exceeded `max_blob_bytes`. | No. Stream, filter, or raise the limit. |
+| `CleanupError` | `FbFastError` | `cleanup`, `close` | Closing a cursor, transaction, statement or connection failed; the connection was discarded. | The pool keeps working; see below. |
+
+`PoolError` is the base of the pool classes and is never raised by itself;
+`FbFastError` is the catch-all.
+
+## Reading an error
+
+Every instance carries four attributes, also on errors raised in Python:
+
+| Attribute | Type | Meaning |
+| --- | --- | --- |
+| `phase` | `str` | Where it failed. `"python"` for checks made in Python, `"config"` for configuration, `"attach"` for opening a connection, `"acquire"` for waiting on the pool, `"validate"` for the SQL checks done before anything is sent, `"prepare"`/`"bind"`/`"execute"`/`"fetch"` for the statement, `"query"`/`"snapshot"`/`"group"` for deadlines, `"cleanup"`/`"close"` for releasing resources. |
+| `sqlstate` | `str \| None` | Five-character SQLSTATE reported by Firebird, such as `42S22` (unknown column), `28000` (authentication) or `08006` (connection failure). `None` when the error did not come from the server. |
+| `native_codes` | `list[int]` | The Firebird status vector (`isc_*` codes), outermost first. Search them in the Firebird error-code list when the message is not enough. |
+| `cleanup_errors` | `list[BaseException]` | Secondary failures that happened while cleaning up after this error. The original error is kept; each secondary failure is also added to the traceback with `add_note()`. |
+
+```python
+import fbfast
+
+try:
+    pool.fetch_all("SELECT NO_SUCH_COLUMN FROM RDB$DATABASE")
+except fbfast.QueryError as error:
+    print(type(error).__name__, error.phase, error.sqlstate, error.native_codes)
+    # QueryError prepare 42S22 [335544569, 335544436, 335544578, 335544382, 336397208]
+```
+
+### Cleanup failures after the reply
+
+Since 0.3.0 a pooled query returns as soon as its result is complete and its
+cursor is closed. Rollback and `ALTER SESSION RESET` run afterwards, while the
+connection stays unavailable to other callers ("deferred cleanup"). If that
+cleanup fails, the connection is discarded and the failure is counted in
+`pool.stats()["cleanup_errors"]`; the caller keeps its complete, valid result
+and receives no `CleanupError`. `CleanupError` is still raised when cleanup is
+part of the call you made: `pool.close()`, leaving a snapshot or a stream.
+
+### Errors in query groups
+
+With `run_all(..., fail_fast=True)` (the default) the first error cancels the
+other queries and is raised from `run_all`. With `fail_fast=False`, every query
+runs; `results.errors` maps each failed `Query` to its error and
+`results[query]` raises it. In `run_many`, `done.result()` raises and
+`done.exception()` returns the error. A group `timeout=` raises
+`QueryTimeoutError` with `phase == "group"`.
+
+## Retrying safely
+
+Retry only errors that can succeed unchanged, and never retry
+`ConcurrentUseError` even though it is a `PoolBusyError`:
+
+```python
+import time
+
+import fbfast
+
+RETRYABLE = (fbfast.DatabaseConnectionError, fbfast.PoolTimeoutError, fbfast.PoolBusyError)
+
+
+def fetch_all_with_retry(pool: fbfast.Pool, sql: str, params=None, attempts: int = 3):
+    for attempt in range(attempts):
+        try:
+            return pool.fetch_all(sql, params)
+        except RETRYABLE as error:
+            if isinstance(error, fbfast.ConcurrentUseError) or attempt == attempts - 1:
+                raise
+            time.sleep(0.2 * 2**attempt)
+```
+
+Rules of thumb:
+
+- Before any SQL is sent, fbfast already replaces a broken idle connection once
+  within `acquire_timeout` (counted in `stats()["reconnects"]`). After SQL was
+  sent, the error is returned, never retried. Within `ready_transaction_timeout`
+  (2 s) of a connection's previous query, the query itself is the first exchange,
+  so a link that dropped meanwhile surfaces as `DatabaseConnectionError`.
+- A `SELECT` from a selectable procedure can have side effects (generators are
+  not rolled back). Retry those only if they are idempotent.
+- Do not retry inside an open snapshot: any error ends it. Start a new one.
+- When the session handshake finds a mismatch with your configuration
+  (charset, time zone, wire-encryption policy), fbfast raises a plain
+  `QueryError` with `phase == "attach"` and no `sqlstate`: retrying does not fix
+  those. `DatabaseConnectionError` is reserved for failures the server or the
+  network reported (SQLSTATE class 08, or a refused attach).
+
+See [troubleshooting](https://github.com/rafael-peter/fbfast/blob/v0.3.0/docs/guide/troubleshooting.md) for specific messages and fixes.
+
+---
+
+<!-- Source: https://github.com/rafael-peter/fbfast/blob/v0.3.0/docs/guide/troubleshooting.md -->
+
+# Troubleshooting
+
+Symptoms, causes and fixes for problems seen in practice. Each section names the
+exception you get; [errors](https://github.com/rafael-peter/fbfast/blob/v0.3.0/docs/guide/errors.md) explains the hierarchy and its attributes.
+
+Two tools answer most questions without touching the server again:
+
+```python
+info = pool.session_info()   # negotiated capabilities of the latest connection, or None
+stats = pool.stats()          # pool counters (no I/O)
+traces = pool.diagnostics()   # per-query phases; needs FirebirdConfig(diagnostics=True)
+```
+
+`session_info()` returns `server_version`, `role`, `charset`, `time_zone`,
+`wire_encrypted`, `wire_compressed`, `network_protocol`, `protocol_version`,
+`inline_blobs`, `max_inline_blob_size` and `blob_cache_size`.
+
+## Connecting
+
+### `AuthenticationError`: "Incompatible wire encryption levels requested on client and server"
+
+`wire_crypt` defaults to `"required"`. A server with `WireCrypt = Disabled`
+refuses it, and a server with the default `WireCrypt = Required` refuses a
+client configured with `"disabled"`. Firebird reports this with SQLSTATE
+`28000`, so it arrives as `AuthenticationError`; `native_codes` contains
+`335545064`.
+
+- Prefer enabling encryption on the server and keeping `wire_crypt="required"`.
+- `wire_crypt="enabled"` negotiates encryption but accepts an unencrypted
+  connection. Use it, or `"disabled"`, only on a transport you trust (for
+  example a WireGuard/Tailscale tunnel). Check `session_info()["wire_encrypted"]`.
+- `QueryError` (phase `attach`) "Effective wire encryption violates the
+  configured policy" means the negotiated result contradicts your setting; fix
+  the configuration rather than retrying.
+
+### `AuthenticationError` with "user name and password are not defined"
+
+Wrong user or password, or the server's `AuthServer` list does not include
+`Srp256`/`Srp`, which the bundled client uses. `Legacy_Auth` is not offered.
+
+### `RoleNotActiveError`: "Requested role is not active"
+
+The session did not end up with the role you asked for. Either the name is
+wrong, or the user lacks `GRANT <role> TO <user>`. Unquoted role names are
+compared in upper case; pass a quoted name (`role='"MixedCase"'`) only for a
+role created with a quoted identifier. `session_info()["role"]` shows the active
+role; with `role=None` it is `NONE`.
+
+### `DatabaseConnectionError` at `attach`
+
+SQLSTATE `08001`/`08006` and messages such as "Unable to complete network
+request" or "I/O error during open" mean the server, port or database path is
+wrong or unreachable. `database` is the alias or the path **on the server**.
+fbfast only supports remote TCP connections (`network_protocol` `TCPv4`/`TCPv6`),
+including to `localhost`; embedded and XNET connections are rejected.
+
+When the session handshake finds that the connection differs from the
+configuration (charset, time zone or encryption policy), the error is a plain
+`QueryError` with phase `attach` and no `sqlstate`: retrying does not help.
+
+### `UnsupportedServerError`, `ClientLibraryError`
+
+fbfast talks to Firebird 5.0.x servers only. The wheels bundle the official
+5.0.3 client; `ClientLibraryError` means that library (or the one set with
+`client_library`) could not be loaded. Reinstall the wheel for your platform
+and Python version instead of copying files between environments.
+
+## Character sets and text
+
+### `UnsupportedFeatureError`: the connection charset must be UTF8
+
+Only UTF8 connections are supported (`charset="UTF8"`, the default). This does
+not limit your columns: the server converts WIN1252, ISO8859_1 and other column
+charsets to UTF8 on the way out, and you receive `str`.
+
+### Text comes back as `bytes`
+
+Columns and expressions with charset `NONE` (some legacy tables, and functions
+such as `RDB$GET_CONTEXT`) have no declared encoding, so fbfast returns bytes.
+Set `fallback_charset="UTF8"` to decode them, or `CAST(... AS VARCHAR(n)
+CHARACTER SET UTF8)` in SQL. Bytes that are not valid UTF-8 raise
+`DataConversionError`.
+
+### Trailing spaces in `CHAR` columns
+
+`CHAR(n)` values keep their padding (system tables use `CHAR(63)` for names).
+Use `TRIM()` in SQL or `trim_char=True`; `VARCHAR` is never trimmed.
+
+## Parameters and columns
+
+### `DataConversionError`: "Parameter 1 is incompatible with Firebird type 510"
+
+Parameters are bound exactly; strings are not parsed into dates or numbers.
+Pass the Python type that matches the SQL type:
+
+| SQL type (code in the message) | Python value |
+| --- | --- |
+| `VARCHAR`/`CHAR` (448/452) | `str` |
+| `SMALLINT`/`INTEGER`/`BIGINT`/`INT128` (500/496/580/32752) | `int` |
+| `NUMERIC`/`DECIMAL` (stored as 500/496/580/32752 with a scale) | `decimal.Decimal` or `int` (a `float` is rejected) |
+| `DOUBLE PRECISION`/`FLOAT` (480/482) | `float` (an `int` is rejected) |
+| `DATE` (570) | `datetime.date` |
+| `TIMESTAMP` (510) | `datetime.datetime` |
+| `TIME` (560) | `datetime.time` |
+| `BOOLEAN` (32764) | `bool` |
+
+"Expected 1 parameters, received 0" means the number of `?` placeholders and
+values differ. `params` must be a list, a tuple or `None`; one value is `[value]`.
+
+### `DataConversionError`: "Duplicate column names; provide unique aliases"
+
+Tuples allow repeated names, but dictionaries (`as_dict=True`), Pydantic models,
+JSON with `orient="records"`, Arrow and Polars use column names as keys.
+Give every column a unique alias: `SELECT O.ID, C.ID AS CUSTOMER_ID ...`.
+
+### Pydantic: "Field required" for a column that is there
+
+Firebird returns unquoted identifiers in UPPER CASE, so `SELECT id FROM ...`
+produces the key `ID`. Name the fields in upper case, add
+`Field(validation_alias="ID")`, or quote the alias in SQL (`AS "id"`). fbfast
+does not rename columns.
+
+### `UnsupportedTypeError`: "Polars cannot preserve Decimal256"
+
+INT128-based values become Arrow Decimal256, and Polars cannot hold Decimal256.
+In Firebird 4+ these appear more often than expected: `INT128` and
+`NUMERIC(38, x)` columns, and also `SUM()` over `BIGINT` or `NUMERIC(18, x)`, and
+`BIGINT * BIGINT`. Choose one:
+
+- `CAST(SUM(TOTAL) AS NUMERIC(18, 2))` in SQL, when the value fits;
+- `fetch_polars(..., unsupported="string")` to receive exact decimal text;
+- `fetch_arrow(...)` (PyArrow keeps Decimal256), or `fetch_all` (Python `Decimal`).
+
+## Slow queries over a WAN or tunnel
+
+Start with `FirebirdConfig(diagnostics=True)`: each record of
+`pool.diagnostics()` lists phases (`queue`, `begin`, `prepare`, `execute`,
+`fetch`, `cleanup`...) with `seconds` and `roundtrips`. Round trips times your
+latency is usually the whole story on a remote link.
+
+- A cached query in a pool answers after 1 round trip (execute plus the first
+  batch) when its connection has a transaction ready, and after 2 (begin,
+  execute) otherwise. The session reset runs after the reply and starts that
+  ready transaction; it is rolled back after `ready_transaction_timeout` (2 s)
+  without use. `diagnostics` shows `begin` with 0 round trips when it was used.
+- `DatabaseConnectionError` right after a network blip: if the link drops within
+  `ready_transaction_timeout` of the previous query, the next query on that
+  connection is the first exchange and may already have reached the server, so
+  fbfast reports it instead of retrying. After that window, a dead connection is
+  replaced before any SQL is sent. Set `ready_transaction_timeout=None` to always
+  get the transparent replacement at the cost of one extra round trip.
+- Many small queries in a row: put them in `pool.snapshot()`, about 1 round trip
+  each, or run independent ones together with `run_all`.
+- An idle connection is pinged after `health_check_after` seconds in the
+  background, which also keeps tunnels and NAT mappings open.
+
+### BLOB columns are slow
+
+Firebird 5.0.3+ sends BLOBs up to `max_inline_blob_size` (65535 bytes by
+default) inside the row. Without that, every BLOB value costs extra round trips.
+fbfast 0.2.1 lost the inline path for text BLOBs; at 20 ms of latency, 1,000 rows
+with a small text BLOB took 24 s with 0.2.1 and 0.19 s with 0.3.0.
+
+1. Check `session_info()["inline_blobs"]`. It is `False` before server 5.0.3
+   (protocol 19) or with `max_inline_blob_size=0`. Upgrade the server; prefer
+   5.0.4 or later, because 5.0.3 keeps memory for each inline BLOB until the
+   transaction ends.
+2. UTF8, ISO8859_1, NONE, OCTETS and binary BLOBs are read inline. Text BLOBs in
+   other charsets (WIN1252, for example) still go through the server's
+   conversion filter, one extra round trip per value. Convert those columns, or
+   `CAST` them in SQL.
+3. Values larger than the inline limit are always read separately.
+4. `CAST` short text to the smallest `VARCHAR` that fits, never `VARCHAR(8191)`
+   by habit: wide rows mean fewer rows per round trip. `LIST()` returns a BLOB.
+5. Compare `roundtrips` in `diagnostics()` with and without the BLOB column.
+
+### Wire compression is not negotiated
+
+`wire_compression=True` only asks; check `session_info()["wire_compressed"]`.
+Both sides need zlib: Linux wheels use the system `libz.so.1` (install zlib if
+it is missing), Windows wheels bundle `zlib1.dll`, and macOS wheels bundle a
+small shim that loads the system zlib (the official macOS client looked for a
+library name no macOS provides, so compression never worked there before 0.3.0).
+If the client side is fine, the server lacks zlib. Compression helps on slow or
+metered links and costs CPU on a fast LAN.
+
+## Pools, snapshots and concurrency
+
+### `PoolBusyError` versus `ConcurrentUseError`
+
+| | `PoolBusyError` | `ConcurrentUseError` (a subclass) |
+| --- | --- | --- |
+| Cause | Too many callers: the waiting queue (`max_waiters`) is full, or more than `pool_size + max_waiters` async calls are pending. | One snapshot or stream used by two operations at once, e.g. a query while a stream from the same snapshot is open. |
+| Fix | Back off and retry, raise `max_waiters`, or use `run_all`/`run_all_async` for batches, which never overflow the queue. | Serialize the use. Finish or close the stream first; never share a snapshot between threads or tasks. Retrying does not help. |
+
+Catch `ConcurrentUseError` before `PoolBusyError` if you handle both.
+
+### `PoolTimeoutError` while acquiring
+
+No connection became ready within `acquire_timeout` (5 s). Either all
+`pool_size` connections were busy (`stats()["leased"]`, `stats()["waiting"]`)
+or opening a new one was slow or failing. Raise `pool_size`, shorten long
+queries, or check the network.
+
+### Which timeout fired?
+
+| Setting | Default | Covers | Error |
+| --- | --- | --- | --- |
+| `acquire_timeout` | 5 s | Waiting for a ready connection, including opening one. | `PoolTimeoutError`, phase `acquire` |
+| `connect_timeout` | 5 s | Attach and handshake of one connection (also bounded by `acquire_timeout`). | `PoolTimeoutError`, phase `attach` |
+| `query_timeout` / `timeout=` | 30 s | One query, including fetching, conversion and consuming a stream. `None` disables it. | `QueryTimeoutError`, phase `query` or `fetch` |
+| `snapshot_timeout` / `snapshot(timeout=)` | 300 s | The whole snapshot scope, including your code between queries. | `QueryTimeoutError`, phase `snapshot` |
+| `run_all(timeout=)` | none | A whole query group; unfinished queries are cancelled. | `QueryTimeoutError`, phase `group` |
+| `stream_idle_timeout` | 30 s | A stream waiting for its consumer to ask for more. | `QueryTimeoutError`, phase `stream_idle` |
+| `close_timeout` | 10 s | Closing the pool, a snapshot or a stream. | `PoolTimeoutError` |
+| `lock_timeout` | 5 s | Server-side lock waits. | `QueryError` |
+
+Inside a snapshot each query uses the smaller of its own deadline and what is
+left of the snapshot's. Passing `timeout=None` to a query does not disable the
+snapshot deadline.
+
+### Errors inside a snapshot
+
+Any error ends a snapshot. Later calls on it, and leaving its `with` block,
+raise that error again; catch it outside the block and open a new snapshot.
+Using a snapshot or stream outside its `with` block raises `UsageError`.
+
+### `TypeError: 'NoneType' object can't be awaited` after upgrading
+
+0.3.0 renamed the lifecycle methods: no suffix blocks, `_async` (and `aclose`)
+is a coroutine.
+
+| Up to 0.2.x | 0.3.0 |
+| --- | --- |
+| `pool.close_sync()` / `await pool.close()` | `pool.close()` / `await pool.aclose()` |
+| `pool.warmup_sync()` / `await pool.warmup()` | `pool.warmup()` / `await pool.warmup_async()` |
+| `pool.clear_statement_cache_sync()` / `await pool.clear_statement_cache()` | `pool.clear_statement_cache()` / `await pool.clear_statement_cache_async()` |
+| `snapshot.close_sync()` / `await snapshot.close()` | `snapshot.close()` / `await snapshot.aclose()` |
+| `init_pool_sync()` / `await init_pool()` | `init_pool()` / `await init_pool_async()` |
+| `close_pool_sync()` / `await close_pool()` | `close_pool()` / `await close_pool_async()` |
+| `async with pool.snapshot_async()` | `async with pool.snapshot()` |
+
+The old `_sync` names and `snapshot_async()` still work with a
+`DeprecationWarning` until 0.4.0. Names whose meaning flipped have no alias:
+`await pool.close()` now closes the pool synchronously and then fails with
+`TypeError`, so old code fails loudly instead of leaking connections.
+
+### `ForkSafetyError` and worker processes
+
+Pools, snapshots and streams belong to the process that created them. Using
+one in a child after `fork()` raises `ForkSafetyError`, and named pools
+registered before the fork are rejected the same way.
+
+- Importing fbfast before forking is fine; create pools in each worker after it
+  starts (FastAPI lifespan, Gunicorn `post_fork`, Celery `worker_process_init`).
+- Do not open a pool at import time in an app loaded with `--preload`.
+- If the parent process has already used fbfast, start workers with the
+  `spawn` start method (`multiprocessing.get_context("spawn")`). A child forked
+  from such a process should not create a new pool either.
+
+### Statement errors after a schema change
+
+Prepared statements are cached per connection. After DDL changes a table,
+drain active work and call `pool.clear_statement_cache()` (or
+`await pool.clear_statement_cache_async()`), or recreate the pool.
+
+---
+
+<!-- Source: https://github.com/rafael-peter/fbfast/blob/v0.3.0/docs/guide/configuration.md -->
+
+# Configuration
+
+<!-- Generated by scripts/gen_config_docs.py from python/fbfast/_native.pyi; do not edit. -->
+
+`FirebirdConfig()` resolves every option from, in order: the explicit keyword
+argument, the `FB_<NAME>` environment variable, the same variable in a `.env`
+file in the current directory, and the default below. `database`, `user` and
+`password` are required. Construction validates all values and never connects.
+
+```python
+import fbfast
+
+config = fbfast.FirebirdConfig()                      # FB_* variables and .env
+config = fbfast.FirebirdConfig(pool_size=4, query_timeout=10.0, env_file=False)
+config = fbfast.FirebirdConfig.from_env("FB_BI_")     # FB_BI_HOST, FB_BI_DATABASE...
+```
+
+In the environment and `.env`, numbers are text, booleans accept
+`true/false`, `1/0` and `yes/no`, and `none` means `None`. Durations are
+seconds. An explicit `None` wins over the environment for options that accept
+it. Unknown options and invalid values raise `ConfigurationError`.
+
+| Option | Environment | Default | Description |
+|---|---|---|---|
+| `host` | `FB_HOST` | `"localhost"` | Firebird server host name or address (non-empty str). |
+| `port` | `FB_PORT` | `3050` | TCP port (int, 1..65535). |
+| `database` | `FB_DATABASE` | `required` | Database alias or path on the server (non-empty str). |
+| `user` | `FB_USER` | `required` | Firebird user (non-empty str). |
+| `password` | `FB_PASSWORD` | `required` | Password (non-empty str), hidden in repr. Accessing config.password returns a normal str; never log it. |
+| `role` | `FB_ROLE` | `None` | SQL role to activate (str \| None). An explicit None ignores a role from the environment. |
+| `read_only` | `FB_READ_ONLY` | `True` | Only True is supported (Literal[True]); False raises UnsupportedFeatureError. |
+| `charset` | `FB_CHARSET` | `"UTF8"` | Connection charset (non-empty str). Only UTF8 is supported by the executor. |
+| `session_time_zone` | `FB_SESSION_TIME_ZONE` | `"UTC"` | Session time zone such as "America/Sao_Paulo" (non-empty str). |
+| `client_library` | `FB_CLIENT_LIBRARY` | `None` | Path to a libfbclient to use instead of the bundled one (str \| None). |
+| `wire_crypt` | `FB_WIRE_CRYPT` | `"required"` | Wire encryption policy: "required", "enabled" or "disabled"; bools are accepted (True=required, False=disabled). "enabled" allows an unencrypted connection; keep "required" unless the transport is reviewed. |
+| `wire_compression` | `FB_WIRE_COMPRESSION` | `False` | Request zlib wire compression; the server must agree. Helps on slow links, costs CPU on fast ones. Check Pool.session_info()["wire_compressed"]. |
+| `app_name` | `FB_APP_NAME` | `"fbfast"` | Application name reported to the server (non-empty str). |
+| `pool_size` | `FB_POOL_SIZE` | `8` | Maximum connections and native workers (int >= 1); must be >= min_idle. Also the default and maximum concurrency of run_all/run_many. |
+| `min_idle` | `FB_MIN_IDLE` | `2` | Connections kept open and ready (0 <= int <= pool_size). Use 0 to keep none. |
+| `max_waiters` | `FB_MAX_WAITERS` | `256` | Calls allowed to wait in the queue (int >= 1); a full queue raises PoolBusyError. |
+| `acquire_timeout` | `FB_ACQUIRE_TIMEOUT` | `5.0` | Seconds to obtain a ready connection, including any attach/handshake (float; None not allowed). |
+| `connect_timeout` | `FB_CONNECT_TIMEOUT` | `5.0` | Seconds for attach and handshake, also bounded by acquire_timeout (float). |
+| `idle_timeout` | `FB_IDLE_TIMEOUT` | `300.0` | Seconds idle before connections beyond min_idle are closed (float). |
+| `max_lifetime` | `FB_MAX_LIFETIME` | `1800.0` | Target connection lifetime in seconds, jittered so recycling spreads out; active work is never interrupted (float). |
+| `health_check_after` | `FB_HEALTH_CHECK_AFTER` | `30.0` | Seconds idle after which a connection is pinged; done off the critical path, which also keeps tunnels and NAT mappings alive (float). |
+| `close_timeout` | `FB_CLOSE_TIMEOUT` | `10.0` | Seconds to wait for close/cleanup (float). Native work still pending after it stays counted until it finishes. |
+| `fetch_size` | `FB_FETCH_SIZE` | `5000` | Target rows per batch (int >= 1); also the default batch_rows of streams. |
+| `batch_bytes` | `FB_BATCH_BYTES` | `4_194_304 (4 MiB)` | Byte budget per batch (int >= 1); a single larger row forms its own batch. BLOB batches close once their decoded bytes reach it. Not a limit on total Python memory. |
+| `prefetch_batches` | `FB_PREFETCH_BATCHES` | `1` | Batches fetched ahead of the consumer (int >= 0); zero disables read-ahead. |
+| `max_result_bytes` | `FB_MAX_RESULT_BYTES` | `536_870_912 (512 MiB)` | Cumulative budget per materialized result (int >= 1 \| None); does not apply to streams and is not an exact RSS cap. None disables it. |
+| `max_result_rows` | `FB_MAX_RESULT_ROWS` | `None` | Row limit per materialized result (int >= 1 \| None); does not apply to streams. |
+| `max_blob_bytes` | `FB_MAX_BLOB_BYTES` | `67_108_864 (64 MiB)` | Limit per BLOB value, also in streams (int >= 1). Known text charsets count bytes after conversion to UTF-8; exceeding it raises ResultLimitError. |
+| `query_timeout` | `FB_QUERY_TIMEOUT` | `30.0` | Default per-query deadline in seconds, including fetching and Python conversion (float \| None). None disables it. |
+| `lock_timeout` | `FB_LOCK_TIMEOUT` | `5` | Seconds the server waits for locks (int >= 0); zero means NO WAIT. |
+| `stream_idle_timeout` | `FB_STREAM_IDLE_TIMEOUT` | `30.0` | Seconds a stream producer waits for the consumer to ask for more (float \| None); None disables it. Independent of query_timeout. |
+| `statement_cache_size` | `FB_STATEMENT_CACHE_SIZE` | `64` | Prepared statements kept per connection (int >= 0); zero disables the cache. |
+| `statement_cache_bytes` | `FB_STATEMENT_CACHE_BYTES` | `8_388_608 (8 MiB)` | Estimated statement cache budget per connection (int >= 1, bytes). |
+| `trim_char` | `FB_TRIM_CHAR` | `False` | Strip trailing spaces from CHAR columns, never VARCHAR (bool). |
+| `fallback_charset` | `FB_FALLBACK_CHARSET` | `None` | Charset for text without one (charset NONE), str \| None. Currently only UTF8/UTF-8; applies to text and NONE text BLOBs. Invalid bytes raise DataConversionError. |
+| `snapshot_timeout` | `FB_SNAPSHOT_TIMEOUT` | `300.0` | Deadline for a whole snapshot scope, including time between its queries (float \| None, seconds). Each query inside still uses query_timeout. None disables it. |
+| `max_inline_blob_size` | `FB_MAX_INLINE_BLOB_SIZE` | `None` | Largest BLOB a Firebird 5.0.3+ server sends together with its row (int 0..65535 \| None, bytes); 0 disables inline BLOBs. None keeps the client default (65535). |
+| `blob_cache_size` | `FB_BLOB_CACHE_SIZE` | `None` | Client cache for inline BLOBs per connection (int >= 0 \| None, bytes). None keeps the client default (10 MiB). |
+| `diagnostics` | `FB_DIAGNOSTICS` | `False` | Record time and round trips per phase for every pool query, read with Pool.diagnostics() (bool). Reading the counters adds no round trip. |
+| `ready_transaction_timeout` | `FB_READY_TRANSACTION_TIMEOUT` | `2.0` | After a query that read all its rows, its session reset also starts the next query's transaction, so the next query skips one round trip; an unused transaction is rolled back after this many idle seconds (float \| None). None disables the reuse. |
+
+`env_file`: path of a dotenv file (str) or `False` to skip it. Omitted: read
+`.env` in the current directory if it exists. There is no `FB_ENV_FILE`.
+
+---
+
+<!-- Source: https://github.com/rafael-peter/fbfast/blob/v0.3.0/docs/guide/performance.md -->
+
+# Performance and latency
+
+On a remote link (VPN, Tailscale, Cloudflare Tunnel, another region) the cost
+of a query is mostly **round trips × latency**, not CPU. This guide explains
+where the round trips go, what fbfast 0.3.0 does about them, and what to tune
+on the client and on the server.
+
+Measure your own case first:
+
+```python
+config = fbfast.FirebirdConfig(diagnostics=True)
+with fbfast.Pool(config) as pool:
+    pool.fetch_all("SELECT ID FROM ORDERS WHERE STATUS = ?", ["OPEN"])
+    for record in pool.diagnostics():
+        print(record["roundtrips"], [(p["phase"], p["roundtrips"]) for p in record["phases"]])
+    print(pool.session_info())  # inline_blobs, wire_compressed, protocol_version...
+```
+
+Reading the counters is local to the client (no extra round trip).
+`pool.stats()` keeps cumulative totals (`wire_roundtrips`, `wire_sent_bytes`,
+`wire_received_bytes`, `transaction_restarts`, `keepalive_pings`, ...).
+
+## Round trips per query
+
+| Step | 0.2.1 | 0.3.0 |
+|---|---|---|
+| ping after `health_check_after` idle | 1, before the query | 0: done in the background |
+| start transaction | 1 | 0 if the previous query left one ready, else 1 |
+| prepare | 1 on first use per connection | same (statements are cached) |
+| execute + first batch | 1 | 1 |
+| close cursor | 0 (piggybacks) | 0 |
+| rollback + `ALTER SESSION RESET` | 2, before the reply | after the reply (1, and it starts the next transaction) |
+| **critical path, cached statement** | **4 (5–6 cold or idle)** | **1 (2 after 2 s idle)** |
+
+The reset that clears session state (context variables, temporary tables,
+role, time zone) still runs after every query, and every query still gets its
+own transaction. What changed is *when*: after the reply, while the connection
+stays reserved, and as one statement (`ALTER SESSION RESET` inside the
+transaction rolls it back, resets the session and starts the next one).
+
+`ready_transaction_timeout` (default 2 s) rolls an unused ready transaction
+back. While it exists it holds the server's oldest snapshot (OST), which can
+delay garbage collection of newer record versions; it does not hold the
+oldest active transaction. Set it to `None` to give up the saved round trip.
+
+Trade-off: within that window, the query itself is the first exchange on the
+connection. If the link died meanwhile, the query fails with
+`DatabaseConnectionError` instead of being sent again on a new connection
+(fbfast never repeats SQL that may have reached the server). After the window,
+a dead connection is detected by the transaction start and replaced before any
+SQL is sent.
+
+## Measured on a controlled link
+
+Disposable Firebird 5.0.3 server in Docker, toxiproxy adding the round-trip
+time, macOS arm64, CPython 3.14, release builds; medians after warm-up.
+`firebird-driver` 2.0.3 reuses one connection and prepared statements without
+resetting the session. Raw data and full tables (0, 5, 20 and 50 ms):
+`benchmarks/results/20261106T154216Z-latency-0.3.0-final/comparison.md` (all
+cases, 3 samples) and `benchmarks/results/20261106T162154Z-warm-0.3.0/comparison.md`
+(small queries, 5 samples after up to 8 warm-up calls).
+
+| Case (20 ms RTT) | 0.2.1 | 0.3.0 | firebird-driver |
+|---|---:|---:|---:|
+| One row by primary key | 91 ms | 22 ms | 67 ms |
+| 1,000 rows with a small UTF8 text BLOB | 28.3 s | 0.19 s | 0.22 s |
+| same, ISO8859_1 text BLOB | 28.8 s | 0.20 s | 0.23 s |
+| 100 rows with a 20 KiB text BLOB | 8.1 s | 0.45 s | 0.51 s |
+| `LIST()` inside `WITH` (100 groups) | 2.6 s | 0.04 s | 0.09 s |
+| 1,000 narrow rows | 134 ms | 49 ms | 111 ms |
+| 32 small queries at once (8 connections) | 0.47 s | 0.19 s | 0.43 s |
+| 128 small queries at once (8 connections) | 1.84 s | 0.82 s | 1.47 s |
+
+Large results (100,000 rows, 64 columns) are bounded by the server's batch
+size, not by fbfast; see `TcpRemoteBufferSize` below.
+
+## BLOB columns
+
+Firebird 5.0.3+ (wire protocol 19) sends BLOBs up to `max_inline_blob_size`
+bytes (65,535 by default) together with their row, and the client keeps them
+in a per-connection cache (`blob_cache_size`, 10 MiB by default). The client
+uses that copy only when the BLOB is opened **without** a BLOB parameter
+buffer. fbfast 0.2.1 opened every text BLOB with a transliteration buffer, so
+each one cost an extra round trip. 0.3.0 opens UTF8, ISO8859_1, NONE/OCTETS
+and binary BLOBs raw (ISO8859_1 is converted to UTF-8 locally; this was
+checked against the server for all 256 byte values). Other text charsets
+(WIN1252, ...) still use the server filter and cost one round trip per value.
+
+Checklist for BLOB-heavy queries over a WAN:
+
+- `pool.session_info()["inline_blobs"]` must be `True` (server 5.0.3 or later;
+  prefer 5.0.4, because 5.0.3 keeps inline BLOB memory until the transaction
+  ends, [#8673](https://github.com/FirebirdSQL/firebird/issues/8673)).
+- BLOBs larger than 65,535 bytes are always fetched separately.
+- `LIST()` returns a BLOB; it is now inline too.
+- If a short text column is stored as BLOB, `CAST(col AS VARCHAR(n))` with the
+  smallest `n` that fits. Avoid `VARCHAR(8191)` by habit: in UTF8 a row grows to
+  about 32 KB and the server sends only ~32 rows per round trip.
+- Streams with BLOB columns are batched by decoded bytes (`batch_bytes`).
+
+## Several queries
+
+- Independent queries: `pool.run_all([...])` / `run_all_async`. With N small
+  queries and `pool_size` connections, the total is about
+  `ceil(N / pool_size)` × one query. Unlike `asyncio.gather`, it never exceeds
+  the pool's waiting queue (264 calls by default).
+- Queries that must see the same data: `pool.snapshot()`. Each query inside
+  costs about one round trip (no per-query transaction or reset).
+
+## Wire settings
+
+| Setting | Where it applies | Recommendation |
+|---|---|---|
+| `TcpRemoteBufferSize` | **server** `firebird.conf` | The server's value bounds how much data each fetch round trip carries (default 8192; 32767 is the maximum). Setting it only on the client changed nothing in our test: 100,000 rows at 20 ms took 101 round trips and 3.73 s either way. |
+| `WireCompression` | client asks (`wire_compression=True`), server agrees | Helps on slow or metered links, costs CPU on a fast LAN. Check `session_info()["wire_compressed"]`. Works on Linux (system `libz.so.1`), Windows (bundled `zlib1.dll`) and macOS (0.3.0 ships a shim; the official macOS client looked for a non-existent `libz.dylib.1`). |
+| `WireCrypt` | both | Keep `wire_crypt="required"`. Encryption costs CPU and about one round trip when connecting, nothing per query. Use `"disabled"` only on a reviewed transport (WireGuard/Tailscale already encrypt). |
+| `TcpNoNagle` | both | Already the default. |
+| `ConnectionTimeout` | client | Use `connect_timeout`. |
+| `DummyPacketInterval` | server | The server probing silent clients; it does not reduce latency. fbfast's idle ping (`health_check_after`) keeps tunnels and NAT mappings alive. |
+| `AuthClient` | client | The bundled runtime uses `Srp256, Srp`. Do not add `Legacy_Auth`. |
+| `ClientBatchBuffer` | client | Only for the batch write API; irrelevant to a read-only client. |
+
+With 1 MiB/s and 20 ms, compression took a 100-row 20 KiB-BLOB query from
+2.6 s to 0.085 s and 100,000 narrow rows from 5.3 s to 3.2 s.
+
+## On a fast LAN
+
+Conversion to Python objects is a visible part of the time on localhost and
+LANs. Prefer `fetch_json`, `fetch_arrow`/`fetch_polars` or streams when the
+consumer does not need Python objects per row; tuples are cheaper than
+dictionaries, and dictionaries cheaper than Pydantic models.
+
+---
+
+<!-- Source: https://github.com/rafael-peter/fbfast/blob/v0.3.0/docs/guide/api.md -->
+
+# API reference
+
+<!-- Generated by scripts/gen_api_docs.py; do not edit. -->
+
+Naming rule: methods without a suffix block; `*_async` methods and `aclose` are
+coroutines. Parameters bind positionally to `?` placeholders. Module functions
+such as `fbfast.fetch_all(sql, params, pool="default")` are shortcuts for
+`get_pool(pool).fetch_all(sql, params)` and take the same arguments.
+
+## Pools
+
+### `Pool`
+
+Bounded connection pool; every query borrows one connection and returns it.
+
+Construction is lazy: no client loading, network or threads until the first
+query or :meth:`warmup`. Use ``with Pool(config) as pool`` (or ``async with``)
+so connections are always closed. Methods without a suffix block; methods
+ending in ``_async`` (and :meth:`aclose`) are coroutines.
+
+#### `Pool.__aenter__(self) -> Pool`
+
+#### `Pool.__enter__(self) -> Pool`
+
+#### `Pool.aclose(self) -> None`
+
+Async :meth:`close`, waiting without blocking the event loop.
+
+#### `Pool.clear_statement_cache(self, *, timeout: Timeout = fbfast.DEFAULT) -> None`
+
+Free every cached prepared statement, e.g. after DDL changed a table.
+
+#### `Pool.clear_statement_cache_async(self, *, timeout: Timeout = fbfast.DEFAULT) -> None`
+
+Async :meth:`clear_statement_cache`.
+
+#### `Pool.close(self) -> None`
+
+Stop accepting work, wait up to ``close_timeout`` and close every connection.
+
+Raises:
+    PoolTimeoutError: Native work did not finish in time; it stays counted.
+    CleanupError: A connection could not be closed cleanly.
+
+- **`config`** (property): The immutable configuration this pool was created with.
+
+#### `Pool.diagnostics(self) -> list[QueryTrace]`
+
+Drain per-query records (time and round trips per phase).
+
+Records are kept only with ``FirebirdConfig(diagnostics=True)``; at most
+the latest 1024 are retained. Reading the counters adds no round trip.
+
+#### `Pool.explain(self, sql: str, params: Params = None, *, timeout: Timeout = fbfast.DEFAULT) -> str`
+
+Firebird's execution plan for the query; prepares and binds but never executes.
+
+#### `Pool.explain_async(self, sql: str, params: Params = None, *, timeout: Timeout = fbfast.DEFAULT) -> str`
+
+Async :meth:`explain`.
+
+#### `Pool.fetch_all(self, sql: str, params: Params = None, *, model: type[ModelT] | None = None, as_dict: bool = False, timeout: Timeout = fbfast.DEFAULT) -> list[tuple[Any, ...]] | list[dict[str, Any]] | list[ModelT]`
+
+Fetch rows; model selects validated Pydantic objects.
+
+Model validation follows fetching and is outside the query timeout.
+Async validation runs in a thread; cancellation cannot stop user validators.
+as_dict is redundant when model is supplied. ValidationError propagates.
+max_result_rows and max_result_bytes are enforced before Python conversion.
+
+#### `Pool.fetch_all_async(self, sql: str, params: Params = None, *, model: type[ModelT] | None = None, as_dict: bool = False, timeout: Timeout = fbfast.DEFAULT) -> list[tuple[Any, ...]] | list[dict[str, Any]] | list[ModelT]`
+
+Fetch rows; model selects validated Pydantic objects.
+
+Model validation follows fetching and is outside the query timeout.
+Async validation runs in a thread; cancellation cannot stop user validators.
+as_dict is redundant when model is supplied. ValidationError propagates.
+
+#### `Pool.fetch_arrow(self, sql: str, params: Params = None, *, timeout: Timeout = fbfast.DEFAULT) -> pa.Table`
+
+Build a complete pyarrow.Table natively; requires the arrow extra.
+
+Preserves SQL types and metadata, including full INT128 as Decimal256.
+Uses max_result_rows and max_result_bytes. No Python tuples or dictionaries
+are built per row.
+
+#### `Pool.fetch_arrow_async(self, sql: str, params: Params = None, *, timeout: Timeout = fbfast.DEFAULT) -> pa.Table`
+
+Async fetch_arrow; native work and final adaptation run off the event loop.
+
+#### `Pool.fetch_json(self, sql: str, params: Params = None, *, orient: JsonOrient = 'records', json_integers: JsonIntegers = 'safe', json_decimals: JsonDecimals = 'string', json_binary: JsonBinary = 'error', json_non_finite: JsonNonFinite = 'error', timeout: Timeout = fbfast.DEFAULT) -> bytes`
+
+Serialize a complete compact UTF-8 JSON array directly in Rust.
+
+Args:
+    orient: records uses unique column names as keys; values emits arrays.
+    json_integers: safe emits BIGINT/INT128 as strings by column type; number emits exact JSON numbers, which JavaScript may round.
+    json_decimals: string preserves exact decimals by default; number writes exact numeric text without converting through float.
+    json_binary: error rejects binary cells; base64 explicitly encodes them.
+    json_non_finite: error rejects NaN/Infinity; null explicitly maps them to null.
+    timeout: Omitted uses query_timeout; None disables this query's deadline.
+
+#### `Pool.fetch_json_async(self, sql: str, params: Params = None, *, orient: JsonOrient = 'records', json_integers: JsonIntegers = 'safe', json_decimals: JsonDecimals = 'string', json_binary: JsonBinary = 'error', json_non_finite: JsonNonFinite = 'error', timeout: Timeout = fbfast.DEFAULT) -> bytes`
+
+Async fetch_json with the same native writer, precision and result limits.
+
+#### `Pool.fetch_one(self, sql: str, params: Params = None, *, model: type[ModelT] | None = None, as_dict: bool = False, timeout: Timeout = fbfast.DEFAULT) -> tuple[Any, ...] | dict[str, Any] | None | ModelT`
+
+Fetch the first row or None; model selects validated Pydantic objects.
+
+Model validation follows fetching and is outside the query timeout.
+Async validation runs in a thread; cancellation cannot stop user validators.
+as_dict is redundant when model is supplied. ValidationError propagates.
+
+#### `Pool.fetch_one_async(self, sql: str, params: Params = None, *, model: type[ModelT] | None = None, as_dict: bool = False, timeout: Timeout = fbfast.DEFAULT) -> tuple[Any, ...] | dict[str, Any] | None | ModelT`
+
+Fetch the first row or None; model selects validated Pydantic objects.
+
+Model validation follows fetching and is outside the query timeout.
+Async validation runs in a thread; cancellation cannot stop user validators.
+as_dict is redundant when model is supplied. ValidationError propagates.
+
+#### `Pool.fetch_polars(self, sql: str, params: Params = None, *, unsupported: Unsupported = 'error', timeout: Timeout = fbfast.DEFAULT) -> pl.DataFrame`
+
+Build a Polars DataFrame through Arrow with rechunk=False; no pyarrow required.
+
+unsupported='error' rejects unsupported Decimal256 columns before fetching.
+'string' explicitly preserves those columns as exact decimal text.
+The received Polars schema is checked before returning the result.
+
+#### `Pool.fetch_polars_async(self, sql: str, params: Params = None, *, unsupported: Unsupported = 'error', timeout: Timeout = fbfast.DEFAULT) -> pl.DataFrame`
+
+Async fetch_polars; conversion uses the bounded off-loop delivery executor.
+
+#### `Pool.fetch_val(self, sql: str, params: Params = None, *, timeout: Timeout = fbfast.DEFAULT) -> Any`
+
+First column of the first row, or None when there is no row.
+
+Typical for COUNT/SUM/MAX or a single lookup. Same limits and timeout
+rules as fetch_all; only one row is fetched.
+
+#### `Pool.fetch_val_async(self, sql: str, params: Params = None, *, timeout: Timeout = fbfast.DEFAULT) -> Any`
+
+Async :meth:`fetch_val`.
+
+#### `Pool.run_all(self, queries: Iterable[Query[Any]], *, concurrency: int | None = None, timeout: float | None = None, fail_fast: bool = True) -> Results`
+
+Run independent queries at once and wait for all of them.
+
+``results[query]`` returns each value, typed by its :class:`Query`.
+Faster than one query after another when the link has latency: with
+50 ms per round trip, N small queries take about
+``ceil(N / concurrency)`` times one query.
+
+Args:
+    queries: Distinct :class:`Query` objects (``Query.fetch_all(...)``...).
+    concurrency: Queries holding a connection at once; default and
+        maximum ``pool_size``. The rest wait outside the pool queue.
+    timeout: Deadline for the whole group in seconds (None: no group
+        deadline). Each query keeps its own ``timeout``.
+    fail_fast: Cancel the rest and raise on the first error; with False
+        every query runs and ``results[query]`` raises its own error.
+
+#### `Pool.run_all_async(self, queries: Iterable[Query[Any]], *, concurrency: int | None = None, timeout: float | None = None, fail_fast: bool = True) -> Results`
+
+Async :meth:`run_all`; avoids the queue limit of a plain ``asyncio.gather``.
+
+#### `Pool.run_many(self, queries: Iterable[Query[Any]], *, concurrency: int | None = None, timeout: float | None = None, fail_fast: bool = True) -> QueryGroup`
+
+Like :meth:`run_all`, but yield each :class:`Done` as soon as it finishes.
+
+Use ``with pool.run_many(queries) as group: for done in group: ...``.
+Leaving the block cancels unfinished queries.
+
+#### `Pool.run_many_async(self, queries: Iterable[Query[Any]], *, concurrency: int | None = None, timeout: float | None = None, fail_fast: bool = True) -> AsyncQueryGroup`
+
+Async :meth:`run_many`: ``async with ... as group: async for done in group``.
+
+#### `Pool.session_info(self) -> SessionInfo | None`
+
+Capabilities observed by the latest attachment, or None before any connected.
+
+Includes negotiated wire encryption and compression, protocol version
+and whether small BLOBs travel inline with their rows.
+
+#### `Pool.snapshot(self, *, timeout: Timeout = fbfast.DEFAULT) -> Snapshot`
+
+Reserve one connection with a READ ONLY SNAPSHOT transaction.
+
+Use ``with pool.snapshot() as snap:`` or ``async with pool.snapshot() as snap:``.
+Every query inside sees the same committed data and costs about one
+round trip, which also makes it the fastest way to run several small
+queries over a slow link. Only one operation may run at a time.
+
+Args:
+    timeout: Deadline for the whole scope, including time spent in Python
+        between queries. Omitted uses ``snapshot_timeout`` (300 s);
+        ``None`` disables it. Each query still uses ``query_timeout``.
+
+#### `Pool.stats(self) -> PoolStats`
+
+Current slot phases and cumulative counters, without any I/O.
+
+#### `Pool.stream(self, sql: str, params: Params = None, *, batch_rows: int | None = None, as_dict: bool = False, timeout: Timeout = fbfast.DEFAULT) -> Stream`
+
+Iterate over row batches: ``with pool.stream(sql) as s: for batch in s: ...``.
+
+Each batch is a list of tuples (or dicts with as_dict=True) of at most
+batch_rows rows (default fetch_size) and about batch_bytes bytes. The
+stream holds one connection until it is closed; materialized-result
+limits do not apply, max_blob_bytes and timeouts do. Prefer it for
+results too large to hold in memory.
+
+#### `Pool.stream_arrow(self, sql: str, params: Params = None, *, batch_rows: int | None = None, timeout: Timeout = fbfast.DEFAULT) -> ArrowStream`
+
+Use with; yields owned ArrowBatch objects or exports one blocking C Stream.
+
+No Python Arrow extra is required. Schema is available after entering.
+batch_rows defaults to fetch_size; batch_bytes bounds native batches.
+Materialized row/byte limits do not apply to this stream.
+
+#### `Pool.stream_arrow_async(self, sql: str, params: Params = None, *, batch_rows: int | None = None, timeout: Timeout = fbfast.DEFAULT) -> AsyncArrowStream`
+
+Use async with, then async for ArrowBatch; C Array exports need no PyArrow.
+
+#### `Pool.stream_async(self, sql: str, params: Params = None, *, batch_rows: int | None = None, as_dict: bool = False, timeout: Timeout = fbfast.DEFAULT) -> AsyncStream`
+
+Async :meth:`stream`: ``async with pool.stream_async(sql) as s: async for batch in s``.
+
+#### `Pool.stream_json(self, sql: str, params: Params = None, *, format: JsonFormat = 'ndjson', batch_rows: int | None = None, orient: JsonOrient = 'records', json_integers: JsonIntegers = 'safe', json_decimals: JsonDecimals = 'string', json_binary: JsonBinary = 'error', json_non_finite: JsonNonFinite = 'error', timeout: Timeout = fbfast.DEFAULT) -> JsonStream`
+
+Use with: ndjson keeps records intact; array chunks may split JSON/UTF-8.
+
+batch_rows limits native fetch rows; batch_bytes bounds encoded chunks.
+One oversized NDJSON record stays in a single chunk. Materialized-result
+row limits do not apply. Other options match fetch_json.
+
+#### `Pool.stream_json_async(self, sql: str, params: Params = None, *, format: JsonFormat = 'ndjson', batch_rows: int | None = None, orient: JsonOrient = 'records', json_integers: JsonIntegers = 'safe', json_decimals: JsonDecimals = 'string', json_binary: JsonBinary = 'error', json_non_finite: JsonNonFinite = 'error', timeout: Timeout = fbfast.DEFAULT) -> AsyncJsonStream`
+
+Use async with, then async for bytes; same options as stream_json.
+
+#### `Pool.warmup(self) -> None`
+
+Open ``min_idle`` connections (at least one) now, raising on failure.
+
+#### `Pool.warmup_async(self) -> None`
+
+Async :meth:`warmup`; connection work runs off the event loop.
+
+## Snapshots
+
+### `Snapshot`
+
+Consistent read session: use ``with pool.snapshot()`` or ``async with pool.snapshot()``.
+
+Queries and streams share one READ ONLY SNAPSHOT transaction on one
+connection, so they all see the same committed data. Only one operation may
+run at a time, including Python conversion and an open stream; a second one
+raises :class:`ConcurrentUseError`. Any error ends the snapshot. The scope's
+deadline also counts time spent between queries.
+
+#### `Snapshot.__aenter__(self) -> Snapshot`
+
+#### `Snapshot.__enter__(self) -> Snapshot`
+
+#### `Snapshot.aclose(self) -> None`
+
+Async :meth:`close`.
+
+#### `Snapshot.close(self) -> None`
+
+End the transaction and return the connection to the pool (idempotent).
+
+#### `Snapshot.explain(self, sql: str, params: Params = None, *, timeout: Timeout = fbfast.DEFAULT) -> str`
+
+Firebird's execution plan for the query; prepares and binds but never executes.
+
+#### `Snapshot.explain_async(self, sql: str, params: Params = None, *, timeout: Timeout = fbfast.DEFAULT) -> str`
+
+Async :meth:`explain`.
+
+#### `Snapshot.fetch_all(self, sql: str, params: Params = None, *, model: type[ModelT] | None = None, as_dict: bool = False, timeout: Timeout = fbfast.DEFAULT) -> list[tuple[Any, ...]] | list[dict[str, Any]] | list[ModelT]`
+
+Fetch rows; model selects validated Pydantic objects.
+
+Model validation follows fetching and is outside the query timeout.
+Async validation runs in a thread; cancellation cannot stop user validators.
+as_dict is redundant when model is supplied. ValidationError propagates.
+max_result_rows and max_result_bytes are enforced before Python conversion.
+
+#### `Snapshot.fetch_all_async(self, sql: str, params: Params = None, *, model: type[ModelT] | None = None, as_dict: bool = False, timeout: Timeout = fbfast.DEFAULT) -> list[tuple[Any, ...]] | list[dict[str, Any]] | list[ModelT]`
+
+Fetch rows; model selects validated Pydantic objects.
+
+Model validation follows fetching and is outside the query timeout.
+Async validation runs in a thread; cancellation cannot stop user validators.
+as_dict is redundant when model is supplied. ValidationError propagates.
+
+#### `Snapshot.fetch_arrow(self, sql: str, params: Params = None, *, timeout: Timeout = fbfast.DEFAULT) -> pa.Table`
+
+Build a complete pyarrow.Table natively; requires the arrow extra.
+
+Preserves SQL types and metadata, including full INT128 as Decimal256.
+Uses max_result_rows and max_result_bytes. No Python tuples or dictionaries
+are built per row.
+
+#### `Snapshot.fetch_arrow_async(self, sql: str, params: Params = None, *, timeout: Timeout = fbfast.DEFAULT) -> pa.Table`
+
+Async fetch_arrow; native work and final adaptation run off the event loop.
+
+#### `Snapshot.fetch_json(self, sql: str, params: Params = None, *, orient: JsonOrient = 'records', json_integers: JsonIntegers = 'safe', json_decimals: JsonDecimals = 'string', json_binary: JsonBinary = 'error', json_non_finite: JsonNonFinite = 'error', timeout: Timeout = fbfast.DEFAULT) -> bytes`
+
+Serialize a complete compact UTF-8 JSON array directly in Rust.
+
+Args:
+    orient: records uses unique column names as keys; values emits arrays.
+    json_integers: safe emits BIGINT/INT128 as strings by column type; number emits exact JSON numbers, which JavaScript may round.
+    json_decimals: string preserves exact decimals by default; number writes exact numeric text without converting through float.
+    json_binary: error rejects binary cells; base64 explicitly encodes them.
+    json_non_finite: error rejects NaN/Infinity; null explicitly maps them to null.
+    timeout: Omitted uses query_timeout; None disables this query's deadline.
+
+#### `Snapshot.fetch_json_async(self, sql: str, params: Params = None, *, orient: JsonOrient = 'records', json_integers: JsonIntegers = 'safe', json_decimals: JsonDecimals = 'string', json_binary: JsonBinary = 'error', json_non_finite: JsonNonFinite = 'error', timeout: Timeout = fbfast.DEFAULT) -> bytes`
+
+Async fetch_json with the same native writer, precision and result limits.
+
+#### `Snapshot.fetch_one(self, sql: str, params: Params = None, *, model: type[ModelT] | None = None, as_dict: bool = False, timeout: Timeout = fbfast.DEFAULT) -> tuple[Any, ...] | dict[str, Any] | None | ModelT`
+
+Fetch the first row or None; model selects validated Pydantic objects.
+
+Model validation follows fetching and is outside the query timeout.
+Async validation runs in a thread; cancellation cannot stop user validators.
+as_dict is redundant when model is supplied. ValidationError propagates.
+
+#### `Snapshot.fetch_one_async(self, sql: str, params: Params = None, *, model: type[ModelT] | None = None, as_dict: bool = False, timeout: Timeout = fbfast.DEFAULT) -> tuple[Any, ...] | dict[str, Any] | None | ModelT`
+
+Fetch the first row or None; model selects validated Pydantic objects.
+
+Model validation follows fetching and is outside the query timeout.
+Async validation runs in a thread; cancellation cannot stop user validators.
+as_dict is redundant when model is supplied. ValidationError propagates.
+
+#### `Snapshot.fetch_polars(self, sql: str, params: Params = None, *, unsupported: Unsupported = 'error', timeout: Timeout = fbfast.DEFAULT) -> pl.DataFrame`
+
+Build a Polars DataFrame through Arrow with rechunk=False; no pyarrow required.
+
+unsupported='error' rejects unsupported Decimal256 columns before fetching.
+'string' explicitly preserves those columns as exact decimal text.
+The received Polars schema is checked before returning the result.
+
+#### `Snapshot.fetch_polars_async(self, sql: str, params: Params = None, *, unsupported: Unsupported = 'error', timeout: Timeout = fbfast.DEFAULT) -> pl.DataFrame`
+
+Async fetch_polars; conversion uses the bounded off-loop delivery executor.
+
+#### `Snapshot.fetch_val(self, sql: str, params: Params = None, *, timeout: Timeout = fbfast.DEFAULT) -> Any`
+
+First column of the first row, or None when there is no row.
+
+Typical for COUNT/SUM/MAX or a single lookup. Same limits and timeout
+rules as fetch_all; only one row is fetched.
+
+#### `Snapshot.fetch_val_async(self, sql: str, params: Params = None, *, timeout: Timeout = fbfast.DEFAULT) -> Any`
+
+Async :meth:`fetch_val`.
+
+#### `Snapshot.stream(self, sql: str, params: Params = None, *, batch_rows: int | None = None, as_dict: bool = False, timeout: Timeout = fbfast.DEFAULT) -> Stream`
+
+Iterate over row batches: ``with pool.stream(sql) as s: for batch in s: ...``.
+
+Each batch is a list of tuples (or dicts with as_dict=True) of at most
+batch_rows rows (default fetch_size) and about batch_bytes bytes. The
+stream holds one connection until it is closed; materialized-result
+limits do not apply, max_blob_bytes and timeouts do. Prefer it for
+results too large to hold in memory.
+
+#### `Snapshot.stream_arrow(self, sql: str, params: Params = None, *, batch_rows: int | None = None, timeout: Timeout = fbfast.DEFAULT) -> ArrowStream`
+
+Use with; yields owned ArrowBatch objects or exports one blocking C Stream.
+
+No Python Arrow extra is required. Schema is available after entering.
+batch_rows defaults to fetch_size; batch_bytes bounds native batches.
+Materialized row/byte limits do not apply to this stream.
+
+#### `Snapshot.stream_arrow_async(self, sql: str, params: Params = None, *, batch_rows: int | None = None, timeout: Timeout = fbfast.DEFAULT) -> AsyncArrowStream`
+
+Use async with, then async for ArrowBatch; C Array exports need no PyArrow.
+
+#### `Snapshot.stream_async(self, sql: str, params: Params = None, *, batch_rows: int | None = None, as_dict: bool = False, timeout: Timeout = fbfast.DEFAULT) -> AsyncStream`
+
+Async :meth:`stream`: ``async with pool.stream_async(sql) as s: async for batch in s``.
+
+#### `Snapshot.stream_json(self, sql: str, params: Params = None, *, format: JsonFormat = 'ndjson', batch_rows: int | None = None, orient: JsonOrient = 'records', json_integers: JsonIntegers = 'safe', json_decimals: JsonDecimals = 'string', json_binary: JsonBinary = 'error', json_non_finite: JsonNonFinite = 'error', timeout: Timeout = fbfast.DEFAULT) -> JsonStream`
+
+Use with: ndjson keeps records intact; array chunks may split JSON/UTF-8.
+
+batch_rows limits native fetch rows; batch_bytes bounds encoded chunks.
+One oversized NDJSON record stays in a single chunk. Materialized-result
+row limits do not apply. Other options match fetch_json.
+
+#### `Snapshot.stream_json_async(self, sql: str, params: Params = None, *, format: JsonFormat = 'ndjson', batch_rows: int | None = None, orient: JsonOrient = 'records', json_integers: JsonIntegers = 'safe', json_decimals: JsonDecimals = 'string', json_binary: JsonBinary = 'error', json_non_finite: JsonNonFinite = 'error', timeout: Timeout = fbfast.DEFAULT) -> AsyncJsonStream`
+
+Use async with, then async for bytes; same options as stream_json.
+
+## Several queries at once
+
+### `Query`
+
+One query to run with ``pool.run_all`` / ``pool.run_many`` (and ``_async``).
+
+Build it with the factory matching the result you want, e.g.
+``Query.fetch_all(sql, params, model=Order)``; ``results[query]`` is then
+typed as ``list[Order]``. Each Query object is a distinct key, so create two
+objects to run the same SQL twice. Streams are not available here.
+
+#### `Query.explain(sql: str, params: Params = None, *, timeout: Timeout = fbfast.DEFAULT) -> Query[str]`
+
+The execution plan text, without executing the query.
+
+#### `Query.fetch_all(sql: str, params: Params = None, *, model: Any = None, as_dict: bool = False, timeout: Timeout = fbfast.DEFAULT) -> Query[Any]`
+
+All rows, like ``Pool.fetch_all``.
+
+#### `Query.fetch_arrow(sql: str, params: Params = None, *, timeout: Timeout = fbfast.DEFAULT) -> Query[pa.Table]`
+
+A ``pyarrow.Table``; requires ``fbfast[arrow]``.
+
+#### `Query.fetch_json(sql: str, params: Params = None, *, orient: JsonOrient = 'records', json_integers: JsonIntegers = 'safe', json_decimals: JsonDecimals = 'string', json_binary: JsonBinary = 'error', json_non_finite: JsonNonFinite = 'error', timeout: Timeout = fbfast.DEFAULT) -> Query[bytes]`
+
+Native JSON array bytes, like ``Pool.fetch_json``.
+
+#### `Query.fetch_one(sql: str, params: Params = None, *, model: Any = None, as_dict: bool = False, timeout: Timeout = fbfast.DEFAULT) -> Query[Any]`
+
+First row or None, like ``Pool.fetch_one``.
+
+#### `Query.fetch_polars(sql: str, params: Params = None, *, unsupported: Unsupported = 'error', timeout: Timeout = fbfast.DEFAULT) -> Query[pl.DataFrame]`
+
+A ``polars.DataFrame``; requires ``fbfast[polars]``.
+
+#### `Query.fetch_val(sql: str, params: Params = None, *, timeout: Timeout = fbfast.DEFAULT) -> Query[Any]`
+
+First column of the first row, or None.
+
+### `Results`
+
+Outcome of ``run_all``: ``results[query]`` is typed by the Query.
+
+Iteration follows the input order. With ``fail_fast=False`` a failed query
+raises its error when looked up; ``errors`` lists them all.
+
+#### `Results.__getitem__(self, query: Query[T]) -> T`
+
+#### `Results.__iter__(self) -> Iterator[Query[Any]]`
+
+- **`errors`** (property): Failed queries and their errors (empty with ``fail_fast=True``).
+
+#### `Results.get(self, key, default=None)`
+
+D.get(k[,d]) -> D[k] if k in D, else d.  d defaults to None.
+
+#### `Results.items(self)`
+
+D.items() -> a set-like object providing a view on D's items
+
+#### `Results.keys(self)`
+
+D.keys() -> a set-like object providing a view on D's keys
+
+#### `Results.values(self)`
+
+D.values() -> an object providing a view on D's values
+
+### `Done`
+
+One finished query of a group, in completion order.
+
+#### `Done.exception(self) -> BaseException | None`
+
+The query's error, or None if it succeeded.
+
+#### `Done.result(self) -> T`
+
+The value, or raises the query's error.
+
+### `QueryGroup`
+
+Iterate over finished queries in completion order (``with pool.run_many(...)``).
+
+At most ``concurrency`` queries hold a connection at a time; the rest wait
+outside the pool queue, so other callers keep being served. Leaving the
+``with`` block cancels whatever is still running.
+
+#### `QueryGroup.__enter__(self) -> Self`
+
+#### `QueryGroup.__iter__(self) -> Self`
+
+#### `QueryGroup.cancel(self) -> None`
+
+Cancel unfinished queries; finished ones already returned are kept.
+
+- **`concurrency`** (property): Queries allowed in flight at once (never above ``pool_size``).
+
+### `AsyncQueryGroup`
+
+Async counterpart of :class:`QueryGroup` (``async with pool.run_many_async(...)``).
+
+#### `AsyncQueryGroup.__aenter__(self) -> Self`
+
+#### `AsyncQueryGroup.__aiter__(self) -> Self`
+
+#### `AsyncQueryGroup.cancel(self) -> None`
+
+Cancel unfinished queries and wait until their tasks have stopped.
+
+- **`concurrency`** (property): Queries allowed in flight at once (never above ``pool_size``).
+
+## Streams
+
+### `Stream`
+
+Synchronous context manager yielding owned Python row batches.
+
+#### `Stream.__enter__(self) -> Self`
+
+#### `Stream.__iter__(self) -> Self`
+
+#### `Stream.close(self) -> None`
+
+### `AsyncStream`
+
+Asynchronous context manager yielding owned Python row batches.
+
+#### `AsyncStream.__aenter__(self) -> Self`
+
+#### `AsyncStream.__aiter__(self) -> Self`
+
+#### `AsyncStream.aclose(self) -> None`
+
+### `JsonStream`
+
+Synchronous context manager yielding native UTF-8 JSON byte chunks.
+
+#### `JsonStream.__enter__(self) -> Self`
+
+#### `JsonStream.__iter__(self) -> Self`
+
+#### `JsonStream.close(self) -> None`
+
+### `AsyncJsonStream`
+
+Asynchronous context manager yielding native JSON bytes, without Python rows.
+
+#### `AsyncJsonStream.__aenter__(self) -> Self`
+
+#### `AsyncJsonStream.__aiter__(self) -> Self`
+
+#### `AsyncJsonStream.aclose(self) -> None`
+
+### `ArrowStream`
+
+Owned Arrow batches; a single C Stream export takes over iteration.
+
+C Stream consumption blocks the calling thread. Use AsyncArrowStream for
+event-loop iteration. The surrounding context owns bounded cleanup.
+
+#### `ArrowStream.__enter__(self) -> Self`
+
+#### `ArrowStream.__iter__(self) -> Self`
+
+#### `ArrowStream.close(self) -> None`
+
+- **`schema`** (property): Describe-derived schema, available after enter even for empty results.
+
+### `AsyncArrowStream`
+
+Async context yielding owned ArrowBatch objects without requiring PyArrow.
+
+#### `AsyncArrowStream.__aenter__(self) -> Self`
+
+#### `AsyncArrowStream.__aiter__(self) -> Self`
+
+#### `AsyncArrowStream.aclose(self) -> None`
+
+- **`schema`** (property): Stable schema, available after async enter before any batch is requested.
+
+## Named pools
+
+### `init_pool(config: FirebirdConfig, *, name: str = 'default') -> Pool`
+
+Create, warm and register a pool under ``name``; return it.
+
+The name is reserved while opening. On failure the pool is drained before
+the name is released; if that cleanup times out, call ``close_pool(name)``
+again (another initialization cannot replace it meanwhile).
+
+Raises:
+    PoolAlreadyInitializedError: ``name`` is already registered or reserved.
+
+### `init_pool_async(config: FirebirdConfig, *, name: str = 'default') -> Pool`
+
+Async :func:`init_pool`, sharing the same registry and native pool.
+
+Failure or cancellation requests cleanup. If draining fails or is
+interrupted, the name stays reserved until ``close_pool_async(name)`` succeeds.
+
+### `get_pool(name: str = 'default') -> Pool`
+
+Return the pool registered under ``name``; never opens one implicitly.
+
+This is how code that did not create the pool (a FastAPI route, a job,
+another module) reaches it. Module functions such as ``fbfast.fetch_all``
+call ``get_pool(pool).fetch_all(...)`` for you.
+
+Raises:
+    PoolNotInitializedError: no ready pool has that name (also while opening or closing).
+
+### `close_pool(name: str = 'default') -> None`
+
+Stop new lookups, drain and unregister the pool. An absent name is a no-op.
+
+A timeout or error keeps the name reserved; call again to finish draining.
+
+### `close_pool_async(name: str = 'default') -> None`
+
+Async :func:`close_pool`. Cancellation keeps the reservation for a retry.
+
+## Client information
+
+### `build_info() -> dict[str, Any]`
+
+Return build/ABI/client hashes without loading the client or connecting.
+
+### `client_info(client_library: str | None = None) -> dict[str, Any]`
+
+Load and identify the official client, without opening a database.
+
+## Values
+
+### `TimeWithZone`
+
+Firebird TIME WITH TIME ZONE without inventing a calendar date.
+
+Args:
+    utc_time: UTC time of day, supplied as a naive datetime.time, with
+        100-microsecond precision and fold=0. Required; no default.
+    zone: Firebird/IANA zone name or signed HH:MM offset. Required;
+        no default. Validated against the bundled client during binding.
+
+Values are immutable and hashable. The UTC time and zone are retained
+separately; a region's local time cannot be derived without date rules.
+
+## Configuration and Arrow types
+
+### `ArrowSchema`
+
+Owned schema exportable through the Arrow C Data protocol; no extra required.
+
+- **`names`** (property): Column names in result order.
+
+### `ArrowBatch`
+
+Owned native columns; exported buffers remain valid after stream/pool close.
+
+- **`num_rows`** (property): Rows in this batch.
+- **`num_columns`** (property): Columns in this batch.
+- **`nbytes`** (property): Bytes held by the batch's Arrow buffers.
+- **`schema`** (property): Column names and Arrow types, including SQL metadata.
+
+### `FirebirdConfig`
+
+Immutable connection and pool settings; ``FirebirdConfig()`` reads ``FB_*`` and ``.env``.
+
+Precedence per option: explicit argument > environment > ``.env`` file > default.
+``database``, ``user`` and ``password`` have no default and must come from one
+of these sources. Construction validates everything but never connects.
+See the constructor parameters for meaning, limits and defaults.
+
+Every option is listed in [configuration.md](https://github.com/rafael-peter/fbfast/blob/v0.3.0/docs/guide/configuration.md).
+
+- **`from_env`** (method): Optional shortcut for a custom variable prefix; FirebirdConfig() already reads FB_*.
+- **`host`** (property): 
+- **`port`** (property): 
+- **`database`** (property): 
+- **`user`** (property): 
+- **`password`** (property): 
+- **`role`** (property): 
+- **`read_only`** (property): 
+- **`charset`** (property): 
+- **`session_time_zone`** (property): 
+- **`client_library`** (property): 
+- **`wire_crypt`** (property): 
+- **`wire_compression`** (property): 
+- **`app_name`** (property): 
+- **`pool_size`** (property): 
+- **`min_idle`** (property): 
+- **`max_waiters`** (property): 
+- **`acquire_timeout`** (property): 
+- **`connect_timeout`** (property): 
+- **`idle_timeout`** (property): 
+- **`max_lifetime`** (property): 
+- **`health_check_after`** (property): 
+- **`close_timeout`** (property): 
+- **`fetch_size`** (property): 
+- **`batch_bytes`** (property): 
+- **`prefetch_batches`** (property): 
+- **`max_result_bytes`** (property): 
+- **`max_result_rows`** (property): 
+- **`max_blob_bytes`** (property): 
+- **`query_timeout`** (property): 
+- **`lock_timeout`** (property): 
+- **`stream_idle_timeout`** (property): 
+- **`statement_cache_size`** (property): 
+- **`statement_cache_bytes`** (property): 
+- **`trim_char`** (property): 
+- **`fallback_charset`** (property): 
+- **`snapshot_timeout`** (property): 
+- **`max_inline_blob_size`** (property): 
+- **`blob_cache_size`** (property): 
+- **`diagnostics`** (property): 
+- **`ready_transaction_timeout`** (property): 
+
+## Typing helpers
+
+- **`DEFAULT`**
+- **`DefaultTimeout`**: Type of :data:`DEFAULT`: "use the configured timeout" (``query_timeout`` or ``snapshot_timeout``).
+- **`Timeout`**
+- **`Params`**
+- **`PoolStats`**: Snapshot of pool counters returned by ``Pool.stats()``.
+- **`QueryTrace`**: Diagnostics for one pool query (``FirebirdConfig(diagnostics=True)``).
+- **`PhaseTrace`**: One measured phase of a traced query.
+- **`SessionInfo`**: Capabilities observed on a real attachment, returned by ``Pool.session_info()``.
+
+## Errors
+
+All errors derive from `FbFastError` and carry `phase`, `sqlstate`,
+`native_codes` and `cleanup_errors`. See [errors.md](https://github.com/rafael-peter/fbfast/blob/v0.3.0/docs/guide/errors.md).
+
+- **`FbFastError`**(Exception): Base class of every error raised by fbfast.
+- **`AuthenticationError`**(FbFastError): The server rejected the user name or password (SQLSTATE 28000).
+- **`CleanupError`**(FbFastError): Closing a cursor, transaction, statement or connection failed; the connection was discarded.
+- **`ClientLibraryError`**(FbFastError): The Firebird client library could not be loaded or is not a supported 5.0.3+ client.
+- **`ConfigurationError`**(FbFastError): Invalid, missing or unknown configuration value. Fix the configuration; do not retry.
+- **`DataConversionError`**(FbFastError): A value could not be converted exactly between Firebird and Python.
+- **`PoolError`**(FbFastError): Base class of pool lifecycle and capacity errors.
+- **`QueryCancelledError`**(FbFastError): The operation was cancelled (task cancellation, stream close or group cancellation).
+- **`QueryError`**(FbFastError): Firebird rejected or failed the statement. Inspect ``sqlstate`` and ``native_codes``.
+- **`ReadOnlyViolationError`**(FbFastError): The server reported or the handshake detected a write attempt or a non read-only transaction.
+- **`ResultLimitError`**(FbFastError): A materialized result or BLOB exceeded ``max_result_bytes``, ``max_result_rows`` or ``max_blob_bytes``.
+- **`RoleNotActiveError`**(FbFastError): The requested role is not active for the session (missing grant or wrong name).
+- **`UnsupportedFeatureError`**(FbFastError): The requested option or operation is outside what fbfast supports (e.g. ``read_only=False``).
+- **`UnsupportedServerError`**(FbFastError): The server is not Firebird 5.0.x.
+- **`UnsupportedStatementError`**(FbFastError): The SQL is not a single read-only SELECT/WITH query (DML, DDL, EXECUTE BLOCK...).
+- **`UnsupportedTypeError`**(FbFastError): The result or a parameter uses a type fbfast does not convert (e.g. ARRAY).
+- **`ForkSafetyError`**(PoolError): A pool, stream or snapshot created before ``fork()`` was used in the child. Create pools after forking.
+- **`PoolAlreadyInitializedError`**(PoolError): A name is already reserved, including while opening or draining.
+- **`PoolBusyError`**(PoolError): The waiting queue is full (``max_waiters``). Retrying later can succeed.
+- **`PoolClosedError`**(PoolError): The pool is closing or closed, or its worker stopped. Create a new pool to continue.
+- **`PoolNotInitializedError`**(PoolError): No ready pool is registered under the requested name.
+- **`UsageError`**(FbFastError, RuntimeError): API misuse detected in Python, such as querying a snapshot or stream outside its ``with`` block.
+- **`ArgumentError`**(FbFastError, ValueError, TypeError): Invalid argument value or type passed to an fbfast function.
+- **`ConcurrentUseError`**(PoolBusyError): A snapshot or stream was used by two operations at once. Serialize its use; retrying will not help.
+- **`DatabaseConnectionError`**(QueryError, ConnectionError): The server or network refused the connection or dropped it (SQLSTATE 08xxx).
+- **`PoolTimeoutError`**(PoolError, TimeoutError): No connection became available within ``acquire_timeout``. Retrying later can succeed.
+- **`QueryTimeoutError`**(QueryError, TimeoutError): The query deadline (``query_timeout``, ``timeout=`` or the snapshot deadline) expired.
+
+## Deprecated (removed in 0.4.0)
+
+`clear_statement_cache_sync`, `close_pool_sync`, `close_sync`, `init_pool_sync`, `snapshot_async`, `warmup_sync`: aliases kept for one release; they emit `DeprecationWarning`.
+
+<!-- Generated by scripts/gen_llms_full.py from llms.txt, python/fbfast/llms.txt and docs/guide/; do not edit. -->

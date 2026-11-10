@@ -5,25 +5,19 @@ use crate::{
     executor::Executor as Pool,
     values::Converter,
 };
+use fbfast_core::pool::Query;
 use fbfast_core::{
     error::{Error, ErrorKind},
     pool::{Output, Pending},
 };
-use pyo3::{exceptions::PyRuntimeError, prelude::*, types::PyList, IntoPyObjectExt};
+use pyo3::{exceptions::PyRuntimeError, prelude::*};
 use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
-#[derive(Clone, Copy)]
-pub enum Form {
-    Arrow(fbfast_core::sinks::arrow::ArrowMode),
-    Rows { first: bool, as_dict: bool },
-    Value,
-    Plan,
-    Json(fbfast_core::sinks::json::JsonOptions),
-}
+pub use crate::delivery::Form;
 
 pub(crate) fn admission(gate: &Arc<Semaphore>) -> PyResult<Arc<OwnedSemaphorePermit>> {
     gate.clone().try_acquire_owned().map(Arc::new).map_err(|_| {
@@ -49,14 +43,9 @@ pub fn query<'py>(
     let (locals, control) = async_runtime::context(py)?;
     let permit = admission(gate)?;
     let parameters = Converter::new(py)?.params(params)?;
-    let pending = match form {
-        Form::Arrow(mode) => pool.submit_arrow(sql, parameters, mode, timeout),
-        Form::Json(json) => pool.submit_json(sql, parameters, json, timeout),
-        Form::Plan => pool.submit_explain(sql, parameters, timeout),
-        Form::Value => pool.submit_rows(sql, parameters, true, false, timeout),
-        Form::Rows { first, as_dict } => pool.submit_rows(sql, parameters, first, as_dict, timeout),
-    }
-    .map_err(from_core)?;
+    let pending = pool
+        .submit(Query::new(sql, parameters, timeout, form.request()))
+        .map_err(from_core)?;
     pyo3_async_runtimes::tokio::future_into_py_with_locals(py, locals, async move {
         let _cancel = CancelOnDrop(control.clone());
         let mut pending = pending;
@@ -76,29 +65,7 @@ pub fn query<'py>(
                 converter.checkpoint()?;
                 // Borrow buffers so their potentially large deallocation happens
                 // after Python::attach returns and the GIL has been released.
-                let result = match (&output, form) {
-                    (Output::Arrow(output), Form::Arrow(mode)) => {
-                        crate::arrow::convert(py, output, mode)
-                    }
-                    (Output::Json(json), Form::Json(_)) => converter.bytes(&json.data),
-                    (Output::Rows(rows), Form::Rows { first, as_dict }) => {
-                        if first {
-                            converter.row(rows, 0, as_dict)
-                        } else {
-                            let result = PyList::empty(py);
-                            for index in 0..rows.count {
-                                result.append(converter.row(rows, index, as_dict)?)?;
-                            }
-                            Ok(result.into_any().unbind())
-                        }
-                    }
-                    (Output::Rows(rows), Form::Value) => rows
-                        .row(0)
-                        .and_then(|row| row.first())
-                        .map_or_else(|| Ok(py.None()), |value| converter.value(value)),
-                    (Output::Plan(plan), Form::Plan) => plan.into_py_any(py),
-                    _ => Err(PyRuntimeError::new_err("Unexpected native async output")),
-                }?;
+                let result = crate::delivery::convert(py, &converter, form, &output, true)?;
                 converter.checkpoint()?;
                 Ok(result)
             })

@@ -18,7 +18,7 @@ def test_arrow_async_cancel_active_snapshot_and_reuse(fb, config):
     async def run():
         async with fb.Pool(config(pool_size=1)) as pool:
             with pytest.raises(asyncio.CancelledError):
-                async with pool.snapshot_async() as session:
+                async with pool.snapshot() as session:
                     async with session.stream_arrow_async(LONG, timeout=None) as stream:
                         active = asyncio.create_task(anext(stream))
                         await asyncio.sleep(0.05)
@@ -54,7 +54,7 @@ def test_arrow_stream_idle_timeout_preserves_batch_and_error_context(fb, config,
 @pytest.mark.parametrize("close_owner", ["pool", "stream"])
 def test_arrow_c_stream_close_during_foreign_fetch(fb, config, close_owner):
     pool = fb.Pool(config(pool_size=1, close_timeout=0.05 if close_owner == "pool" else 3))
-    pool.warmup_sync()
+    pool.warmup()
     stream = pool.stream_arrow(LONG, timeout=0.4 if close_owner == "pool" else None).__enter__()
     reader = pa.RecordBatchReader.from_stream(stream)
     errors = []
@@ -72,7 +72,7 @@ def test_arrow_c_stream_close_during_foreign_fetch(fb, config, close_owner):
         assert thread.is_alive()
         if close_owner == "pool":
             with pytest.raises(fb.PoolTimeoutError):
-                pool.close_sync()
+                pool.close()
             assert pool.stats()["leased"] + pool.stats()["cleaning"] > 0
         else:
             stream.close()
@@ -86,7 +86,7 @@ def test_arrow_c_stream_close_during_foreign_fetch(fb, config, close_owner):
         else:
             assert pool.fetch_val("SELECT 7 FROM RDB$DATABASE") == 7
     finally:
-        pool.close_sync()
+        pool.close()
         thread.join(3)
         reader.close()
     assert pool.stats()["closed"] == 1 and pool.stats()["control_threads"] == 0

@@ -1,4 +1,18 @@
 use super::*;
+
+#[test]
+fn latin1_maps_every_byte_to_the_same_code_point() {
+    let bytes: Vec<u8> = (0..=255).collect();
+    let expected: String = (0..=255u32).map(|b| char::from_u32(b).unwrap()).collect();
+    assert_eq!(latin1_to_utf8(bytes), expected.into_bytes());
+    assert_eq!(latin1_to_utf8(b"plain ascii".to_vec()), b"plain ascii");
+    assert_eq!(latin1_to_utf8(vec![0xe7, 0xe3]), "çã".as_bytes());
+    assert!(local_text(4).is_some() && local_text(21).is_some());
+    assert!(
+        local_text(53).is_none(),
+        "WIN1252 keeps the server-side filter"
+    );
+}
 use crate::{
     config::{Config, EnvFile},
     execution::{control::QueryOptions, ExecutionConnection},
@@ -48,6 +62,7 @@ fn cancellation_and_deadline_between_blob_reads_cleanup_transaction() {
         let options = QueryOptions {
             first: true,
             unique_names: false,
+            prevalidated: false,
             cancellation: &cancel,
             deadline: None,
             cleaning: &|| Ok(false),

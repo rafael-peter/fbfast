@@ -118,7 +118,7 @@ def test_json_invalid_options_fail_before_native_open(fb, config, name):
                 pass
         assert pool.stats()["connections_created"] == 0
     finally:
-        pool.close_sync()
+        pool.close()
 
 
 @pytest.mark.parametrize("format", ["ndjson", "array"])
@@ -154,7 +154,7 @@ def test_stream_json_bounds_stats_unicode_and_retained_chunks(fb, config, format
 
 def test_named_json_delegates_async_and_snapshot_share_executor(fb, config):
     async def run():
-        pool = await fb.init_pool(config(pool_size=1, prefetch_batches=0), name="json")
+        pool = await fb.init_pool_async(config(pool_size=1, prefetch_batches=0), name="json")
         try:
             assert fb.fetch_json("SELECT ID FROM FBFAST_TYPES WHERE ID=?", [1], pool="json") == b'[{"ID":1}]'
             assert await fb.fetch_json_async("SELECT ID FROM FBFAST_TYPES WHERE ID=?", [2], pool="json") == b'[{"ID":2}]'
@@ -163,7 +163,7 @@ def test_named_json_delegates_async_and_snapshot_share_executor(fb, config):
             async with fb.stream_json_async("SELECT ID FROM FBFAST_TYPES ORDER BY ID", pool="json", format="array") as chunks:
                 assert isinstance(chunks, fb.AsyncJsonStream)
                 assert json.loads(b"".join([chunk async for chunk in chunks])) == [{"ID": 1}, {"ID": 2}]
-            async with pool.snapshot_async() as session:
+            async with pool.snapshot() as session:
                 tx = await session.fetch_val_async("SELECT CURRENT_TRANSACTION FROM RDB$DATABASE")
                 sql = "SELECT CAST(CURRENT_TRANSACTION AS BIGINT) AS T FROM RDB$DATABASE"
                 assert json.loads(await session.fetch_json_async(sql)) == [{"T": str(tx)}]
@@ -172,5 +172,5 @@ def test_named_json_delegates_async_and_snapshot_share_executor(fb, config):
                 assert json.loads(session.fetch_json(sql)) == [{"T": str(tx)}]
             assert pool.stats()["connections_created"] == 1
         finally:
-            await fb.close_pool("json")
+            await fb.close_pool_async("json")
     asyncio.run(run())

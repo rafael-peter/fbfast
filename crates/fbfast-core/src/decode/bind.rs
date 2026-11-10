@@ -2,6 +2,8 @@ use super::Value;
 use crate::error::{Error, ErrorKind};
 use fbfast_native::Metadata;
 
+/// Test helper; production binding uses `encode_with` and the native encoder.
+#[doc(hidden)]
 pub fn encode(schema: &Metadata, parameters: &[Value]) -> Result<Vec<u8>, Error> {
     encode_with(schema, parameters, &mut |_, _| {
         Err(super::plan::conversion(

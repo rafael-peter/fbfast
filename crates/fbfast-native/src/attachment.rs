@@ -49,6 +49,10 @@ pub struct AttachOptions<'a> {
     pub wire_crypt: &'a str,
     pub wire_compression: bool,
     pub connect_seconds: u32,
+    /// `None` keeps the client default (65535 bytes on Firebird 5.0.3+).
+    pub max_inline_blob_size: Option<u32>,
+    /// `None` keeps the client default (10 MiB per attachment).
+    pub blob_cache_size: Option<u32>,
 }
 
 /// Thread-affine handle owner. Construct and close it inside its owning worker.
@@ -59,6 +63,8 @@ pub struct Connection {
     pub(crate) statements: BTreeSet<u64>,
     pub(crate) stride: u32,
     pub(crate) message_length: u32,
+    /// Fetch storage kept between batches (see `recycle`).
+    pub(crate) spare_batch: Vec<u64>,
     pub(crate) _client: Arc<Client>,
     pid: u32,
     closed: bool,
@@ -69,7 +75,7 @@ impl Connection {
     pub fn attach(client: Arc<Client>, options: &AttachOptions<'_>) -> Result<Self, NativeError> {
         client.check_process()?;
         let owner = NEXT_OWNER
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_add(1))
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_add(1))
             .map_err(|_| NativeError::InvalidInput("Connection identifiers exhausted"))?;
         if !matches!(options.wire_crypt, "required" | "enabled" | "disabled") {
             return Err(NativeError::InvalidInput("Invalid wire crypt policy"));
@@ -108,6 +114,8 @@ impl Connection {
             app_name: values[5].as_ptr(),
             config: values[6].as_ptr(),
             connect_seconds: options.connect_seconds,
+            max_inline_blob_size: options.max_inline_blob_size.map_or(-1, i64::from),
+            max_blob_cache_size: options.blob_cache_size.map_or(-1, i64::from),
         };
         let mut status = ffi::RawStatus::default();
         // SAFETY: Client owns the symbols; all C strings and out status live through the call.
@@ -123,6 +131,7 @@ impl Connection {
             statements: BTreeSet::new(),
             stride: 0,
             message_length: 0,
+            spare_batch: Vec::new(),
             _client: client,
             pid: std::process::id(),
             closed: false,

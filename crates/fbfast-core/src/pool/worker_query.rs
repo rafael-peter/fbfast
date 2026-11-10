@@ -1,4 +1,5 @@
 use super::{
+    query::{Request, StreamFormat},
     state::{Inner, Job, Work},
     Output,
 };
@@ -18,23 +19,36 @@ pub(super) fn execute(
     let options = |first, unique_names| QueryOptions {
         first,
         unique_names,
+        prevalidated: true,
         deadline: end,
         cancellation: &job.progress.cancellation,
         cleaning,
     };
     match &job.work {
-        Work::Arrow {
-            sql, params, mode, ..
-        } => connection
-            .arrow_with(sql, params, *mode, &options(false, true))
-            .map(Output::Arrow),
+        Work::Query(query) => {
+            let (sql, params) = (&query.sql, &query.params);
+            match query.request {
+                Request::Arrow(mode) => connection
+                    .arrow_with(sql, params, mode, &options(false, true))
+                    .map(Output::Arrow),
+                Request::Json(json) => connection
+                    .json_with(sql, params, json, &options(false, json.records))
+                    .map(Output::Json),
+                Request::Rows {
+                    first,
+                    unique_names,
+                } => connection
+                    .fetch_with(sql, params, &options(first, unique_names))
+                    .map(Output::Rows),
+                Request::Explain => connection
+                    .explain_with(sql, params, &options(true, false))
+                    .map(Output::Plan),
+            }
+        }
         Work::Stream {
-            sql,
-            params,
+            query,
             batch_rows,
-            format,
             producer,
-            ..
         } => {
             let mut consumer = super::stream_worker::Consumer {
                 producer,
@@ -46,8 +60,9 @@ pub(super) fn execute(
                 opened: false,
                 deadline: end,
             };
-            if let super::stream::StreamFormat::Arrow = format {
-                return connection
+            let (sql, params) = (&query.sql, &query.params);
+            match query.format {
+                StreamFormat::Arrow => connection
                     .stream_arrow_with(
                         sql,
                         params,
@@ -55,50 +70,28 @@ pub(super) fn execute(
                         &options(false, true),
                         &mut consumer,
                     )
-                    .map(|_| Output::Ready);
-            }
-            if let super::stream::StreamFormat::Json(json) = format {
-                return connection
+                    .map(|_| Output::Ready),
+                StreamFormat::Json(json, format) => connection
                     .stream_json_with(
                         sql,
                         params,
                         *batch_rows,
-                        *json,
-                        &options(false, json.0.records),
+                        (json, format),
+                        &options(false, json.records),
                         &mut consumer,
                     )
-                    .map(|_| Output::Ready);
+                    .map(|_| Output::Ready),
+                StreamFormat::Rows { unique_names } => connection
+                    .stream_with(
+                        sql,
+                        params,
+                        *batch_rows,
+                        &options(false, unique_names),
+                        &mut consumer,
+                    )
+                    .map(|_| Output::Ready),
             }
-            connection
-                .stream_with(
-                    sql,
-                    params,
-                    *batch_rows,
-                    &options(
-                        false,
-                        matches!(format, super::stream::StreamFormat::Rows(true)),
-                    ),
-                    &mut consumer,
-                )
-                .map(|_| Output::Ready)
         }
-        Work::Json {
-            sql, params, json, ..
-        } => connection
-            .json_with(sql, params, *json, &options(false, json.records))
-            .map(Output::Json),
-        Work::Rows {
-            sql,
-            params,
-            first,
-            unique_names,
-            ..
-        } => connection
-            .fetch_with(sql, params, &options(*first, *unique_names))
-            .map(Output::Rows),
-        Work::Explain { sql, params, .. } => connection
-            .explain_with(sql, params, &options(true, false))
-            .map(Output::Plan),
         Work::Warmup | Work::KeepWarm => Ok(Output::Ready),
         Work::ClearCache { .. } | Work::Snapshot { .. } => Err(Error::new(
             ErrorKind::Query,

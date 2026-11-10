@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 from typing import Any, TYPE_CHECKING, cast
-from .row_queries import RowQueries, _DEFAULT, _DefaultTimeout
+from ._types import DEFAULT, Params, Timeout
+from .row_queries import RowQueries
 from .analytics import Unsupported, _mode
 if TYPE_CHECKING:
     import pyarrow as pa  # type: ignore[import-untyped]
@@ -13,10 +14,12 @@ from .json_options import JsonBinary, JsonDecimals, JsonFormat, JsonIntegers, Js
 
 
 class Queries(RowQueries):
+    """Query methods shared by Pool and Snapshot."""
+
     __slots__ = ()
 
-    def stream_arrow(self, sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
-                     batch_rows: int | None = None, timeout: float | None | _DefaultTimeout = _DEFAULT) -> ArrowStream:
+    def stream_arrow(self, sql: str, params: Params = None, *,
+                     batch_rows: int | None = None, timeout: Timeout = DEFAULT) -> ArrowStream:
         """Use with; yields owned ArrowBatch objects or exports one blocking C Stream.
 
         No Python Arrow extra is required. Schema is available after entering.
@@ -25,13 +28,13 @@ class Queries(RowQueries):
         """
         return ArrowStream(self._executor, sql, params, batch_rows, False, self._timeout(timeout), arrow=True)
 
-    def stream_arrow_async(self, sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
-                           batch_rows: int | None = None, timeout: float | None | _DefaultTimeout = _DEFAULT) -> AsyncArrowStream:
+    def stream_arrow_async(self, sql: str, params: Params = None, *,
+                           batch_rows: int | None = None, timeout: Timeout = DEFAULT) -> AsyncArrowStream:
         """Use async with, then async for ArrowBatch; C Array exports need no PyArrow."""
         return AsyncArrowStream(self._executor, sql, params, batch_rows, False, self._timeout(timeout), arrow=True)
 
-    def fetch_arrow(self, sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
-                    timeout: float | None | _DefaultTimeout = _DEFAULT) -> pa.Table:
+    def fetch_arrow(self, sql: str, params: Params = None, *,
+                    timeout: Timeout = DEFAULT) -> pa.Table:
         """Build a complete pyarrow.Table natively; requires the arrow extra.
 
         Preserves SQL types and metadata, including full INT128 as Decimal256.
@@ -40,13 +43,13 @@ class Queries(RowQueries):
         """
         return self._executor.arrow(sql, params, timeout=self._timeout(timeout))
 
-    async def fetch_arrow_async(self, sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
-                                timeout: float | None | _DefaultTimeout = _DEFAULT) -> pa.Table:
+    async def fetch_arrow_async(self, sql: str, params: Params = None, *,
+                                timeout: Timeout = DEFAULT) -> pa.Table:
         """Async fetch_arrow; native work and final adaptation run off the event loop."""
         return await self._executor.arrow(sql, params, timeout=self._timeout(timeout), asynchronous=True)
 
-    def fetch_polars(self, sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
-                     unsupported: Unsupported = "error", timeout: float | None | _DefaultTimeout = _DEFAULT) -> pl.DataFrame:
+    def fetch_polars(self, sql: str, params: Params = None, *,
+                     unsupported: Unsupported = "error", timeout: Timeout = DEFAULT) -> pl.DataFrame:
         """Build a Polars DataFrame through Arrow with rechunk=False; no pyarrow required.
 
         unsupported='error' rejects unsupported Decimal256 columns before fetching.
@@ -55,18 +58,18 @@ class Queries(RowQueries):
         """
         return cast("pl.DataFrame", self._executor.arrow(sql, params, mode=_mode(unsupported), timeout=self._timeout(timeout)))
 
-    async def fetch_polars_async(self, sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
-                                 unsupported: Unsupported = "error", timeout: float | None | _DefaultTimeout = _DEFAULT) -> pl.DataFrame:
+    async def fetch_polars_async(self, sql: str, params: Params = None, *,
+                                 unsupported: Unsupported = "error", timeout: Timeout = DEFAULT) -> pl.DataFrame:
         """Async fetch_polars; conversion uses the bounded off-loop delivery executor."""
         return cast("pl.DataFrame", await self._executor.arrow(sql, params, mode=_mode(unsupported),
                     timeout=self._timeout(timeout), asynchronous=True))
 
     def fetch_json(
-        self, sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
+        self, sql: str, params: Params = None, *,
         orient: JsonOrient = "records", json_integers: JsonIntegers = "safe",
         json_decimals: JsonDecimals = "string", json_binary: JsonBinary = "error",
         json_non_finite: JsonNonFinite = "error",
-        timeout: float | None | _DefaultTimeout = _DEFAULT,
+        timeout: Timeout = DEFAULT,
     ) -> bytes:
         """Serialize a complete compact UTF-8 JSON array directly in Rust.
 
@@ -82,11 +85,11 @@ class Queries(RowQueries):
                     json_decimals, json_binary, json_non_finite), timeout=self._timeout(timeout)))
 
     async def fetch_json_async(
-        self, sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
+        self, sql: str, params: Params = None, *,
         orient: JsonOrient = "records", json_integers: JsonIntegers = "safe",
         json_decimals: JsonDecimals = "string", json_binary: JsonBinary = "error",
         json_non_finite: JsonNonFinite = "error",
-        timeout: float | None | _DefaultTimeout = _DEFAULT,
+        timeout: Timeout = DEFAULT,
     ) -> bytes:
         """Async fetch_json with the same native writer, precision and result limits."""
         return cast(bytes, await self._executor.json(sql, params, options=(orient, json_integers,
@@ -94,12 +97,12 @@ class Queries(RowQueries):
                     asynchronous=True))
 
     def stream_json(
-        self, sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
+        self, sql: str, params: Params = None, *,
         format: JsonFormat = "ndjson", batch_rows: int | None = None,
         orient: JsonOrient = "records", json_integers: JsonIntegers = "safe",
         json_decimals: JsonDecimals = "string", json_binary: JsonBinary = "error",
         json_non_finite: JsonNonFinite = "error",
-        timeout: float | None | _DefaultTimeout = _DEFAULT,
+        timeout: Timeout = DEFAULT,
     ) -> JsonStream:
         """Use with: ndjson keeps records intact; array chunks may split JSON/UTF-8.
 
@@ -111,12 +114,12 @@ class Queries(RowQueries):
                           ((orient, json_integers, json_decimals, json_binary, json_non_finite), format))
 
     def stream_json_async(
-        self, sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
+        self, sql: str, params: Params = None, *,
         format: JsonFormat = "ndjson", batch_rows: int | None = None,
         orient: JsonOrient = "records", json_integers: JsonIntegers = "safe",
         json_decimals: JsonDecimals = "string", json_binary: JsonBinary = "error",
         json_non_finite: JsonNonFinite = "error",
-        timeout: float | None | _DefaultTimeout = _DEFAULT,
+        timeout: Timeout = DEFAULT,
     ) -> AsyncJsonStream:
         """Use async with, then async for bytes; same options as stream_json."""
         return AsyncJsonStream(self._executor, sql, params, batch_rows, False, self._timeout(timeout),
@@ -124,42 +127,59 @@ class Queries(RowQueries):
 
 
     def fetch_val(
-        self, sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
-        timeout: float | None | _DefaultTimeout = _DEFAULT,
+        self, sql: str, params: Params = None, *,
+        timeout: Timeout = DEFAULT,
     ) -> Any:
+        """First column of the first row, or None when there is no row.
+
+        Typical for COUNT/SUM/MAX or a single lookup. Same limits and timeout
+        rules as fetch_all; only one row is fetched.
+        """
         return self._executor.value(sql, params, timeout=self._timeout(timeout))
 
 
     def explain(
-        self, sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
-        timeout: float | None | _DefaultTimeout = _DEFAULT,
+        self, sql: str, params: Params = None, *,
+        timeout: Timeout = DEFAULT,
     ) -> str:
+        """Firebird's execution plan for the query; prepares and binds but never executes."""
         return self._executor.explain(sql, params, timeout=self._timeout(timeout))
 
 
-    def stream(self, sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
+    def stream(self, sql: str, params: Params = None, *,
                batch_rows: int | None = None, as_dict: bool = False,
-               timeout: float | None | _DefaultTimeout = _DEFAULT) -> Stream:
+               timeout: Timeout = DEFAULT) -> Stream:
+        """Iterate over row batches: ``with pool.stream(sql) as s: for batch in s: ...``.
+
+        Each batch is a list of tuples (or dicts with as_dict=True) of at most
+        batch_rows rows (default fetch_size) and about batch_bytes bytes. The
+        stream holds one connection until it is closed; materialized-result
+        limits do not apply, max_blob_bytes and timeouts do. Prefer it for
+        results too large to hold in memory.
+        """
         return Stream(self._executor, sql, params, batch_rows, as_dict, self._timeout(timeout))
 
 
-    def stream_async(self, sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
+    def stream_async(self, sql: str, params: Params = None, *,
                      batch_rows: int | None = None, as_dict: bool = False,
-                     timeout: float | None | _DefaultTimeout = _DEFAULT) -> AsyncStream:
+                     timeout: Timeout = DEFAULT) -> AsyncStream:
+        """Async :meth:`stream`: ``async with pool.stream_async(sql) as s: async for batch in s``."""
         return AsyncStream(self._executor, sql, params, batch_rows, as_dict, self._timeout(timeout))
 
 
     async def fetch_val_async(
-        self, sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
-        timeout: float | None | _DefaultTimeout = _DEFAULT,
+        self, sql: str, params: Params = None, *,
+        timeout: Timeout = DEFAULT,
     ) -> Any:
+        """Async :meth:`fetch_val`."""
         return await self._executor.value_async(sql, params, timeout=self._timeout(timeout))
 
 
     async def explain_async(
-        self, sql: str, params: list[Any] | tuple[Any, ...] | None = None, *,
-        timeout: float | None | _DefaultTimeout = _DEFAULT,
+        self, sql: str, params: Params = None, *,
+        timeout: Timeout = DEFAULT,
     ) -> str:
+        """Async :meth:`explain`."""
         return await self._executor.explain_async(sql, params, timeout=self._timeout(timeout))
 
 

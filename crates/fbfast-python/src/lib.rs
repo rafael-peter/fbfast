@@ -6,8 +6,11 @@ mod arrow_stream;
 mod async_runtime;
 mod asyncio;
 mod config;
+mod delivery;
 mod errors;
 mod executor;
+mod group;
+mod introspection;
 mod json;
 mod pool;
 mod pool_wait;
@@ -15,9 +18,8 @@ mod runtime;
 mod stream;
 mod values;
 
-#[pymodule]
+#[pymodule(gil_used = true)]
 fn _native(module: &Bound<'_, PyModule>) -> PyResult<()> {
-    errors::register(module)?;
     config::register(module)?;
     pool::register(module)?;
     arrow::register(module)?;

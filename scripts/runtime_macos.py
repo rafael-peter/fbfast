@@ -82,6 +82,7 @@ def copy_runtime(root: Path, package: Path) -> dict[str, str]:
         "Providers = Remote\nWireCrypt = Required\nAuthClient = Srp256, Srp\n"
     )
     rewrite_libraries(runtime)
+    build_zlib_shim(runtime / "lib")
     version = client_version(runtime / "lib/libfbclient.dylib")
     import re
 
@@ -96,6 +97,39 @@ def copy_runtime(root: Path, package: Path) -> dict[str, str]:
         "client_original_sha256": sha256(source / "lib/libfbclient.dylib"),
         "client_sha256": sha256(runtime / "lib/libfbclient.dylib"),
     }
+
+
+ZLIB_SHIM = "libz.dylib.1"
+
+
+def build_zlib_shim(directory: Path) -> None:
+    """Make wire compression available to the macOS client.
+
+    The official macOS client dlopens "libz.dylib.1" (the Linux soname pattern),
+    which no macOS system provides, so compression could never be negotiated.
+    This empty library only re-exports the system zlib under that install name;
+    fbfast preloads it before the client, whose dlopen then finds it. No zlib
+    code is bundled. Its name does not end in .dylib, so rewrite_libraries keeps
+    the install name intact.
+    """
+    import os
+    import tempfile
+
+    with tempfile.TemporaryDirectory(prefix="fbfast-zlib-") as temporary:
+        source = Path(temporary) / "shim.c"
+        source.write_text("/* Re-exports /usr/lib/libz.1.dylib; contains no code. */\n")
+        minimum = os.environ.get("MACOSX_DEPLOYMENT_TARGET", "11.0")
+        subprocess.run(
+            ["clang", "-dynamiclib", "-o", str(directory / ZLIB_SHIM), str(source),
+             "-Wl,-reexport_library,/usr/lib/libz.1.dylib", "-install_name", ZLIB_SHIM,
+             f"-mmacosx-version-min={minimum}"],
+            check=True, capture_output=True,
+        )
+    edges = dependencies(directory / ZLIB_SHIM)
+    if "/usr/lib/libz.1.dylib" not in edges or not all(
+        edge == ZLIB_SHIM or edge.startswith(SYSTEM_PREFIXES) for edge in edges
+    ):
+        raise RuntimeError("zlib shim must only re-export /usr/lib/libz.1.dylib")
 
 
 def rewrite_libraries(runtime: Path) -> None:

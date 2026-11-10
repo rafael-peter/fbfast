@@ -3,6 +3,7 @@ use crate::{
     errors::from_core,
     values::Converter,
 };
+use fbfast_core::pool::{StreamFormat, StreamQuery};
 use fbfast_core::{
     error::{Error, ErrorKind},
     pool::{Stream, StreamAction, StreamItem, StreamWait},
@@ -26,6 +27,12 @@ pub struct PyStream {
 struct Delivery {
     wait: StreamWait,
     delivered: bool,
+}
+impl Delivery {
+    /// Marks the item as handed to Python, so dropping it no longer cancels.
+    fn complete(&mut self) {
+        self.delivered = true;
+    }
 }
 impl Drop for Delivery {
     fn drop(&mut self) {
@@ -101,18 +108,12 @@ impl PyStream {
         };
         let item = loop {
             check_close(end)?;
-            let result = py.detach(|| {
-                let result = delivery.wait.poll();
-                if matches!(result, Ok(None)) {
-                    std::thread::sleep(Duration::from_millis(5));
-                }
-                result
-            });
+            let result = py.detach(|| delivery.wait.wait(Duration::from_millis(25)));
             // Explicit context close interrupted the foreign reader. That reader
             // receives cancellation; close only acknowledges completed cleanup.
             let result = match result {
                 Err(e) if cancelled_on_close && e.kind == ErrorKind::Cancelled => {
-                    delivery.delivered = true;
+                    delivery.complete();
                     return Ok(None);
                 }
                 result => result.map_err(from_core)?,
@@ -148,7 +149,7 @@ impl PyStream {
         };
         // Large native buffers are released without holding the interpreter.
         py.detach(|| drop(item));
-        delivery.delivered = true;
+        delivery.complete();
         Ok(result)
     }
 
@@ -165,7 +166,7 @@ impl PyStream {
                 Ok(wait) => return Ok((wait, cancelled)),
                 Err(e)
                     if action == StreamAction::Close
-                        && e.kind == ErrorKind::PoolBusy
+                        && e.kind == ErrorKind::ConcurrentUse
                         && *self.exported.lock().unwrap_or_else(|e| e.into_inner()) =>
                 {
                     self.core.stop(true).map_err(from_core)?;
@@ -221,7 +222,7 @@ impl PyStream {
                         Ok(Some(result))
                     });
                     if result.is_ok() {
-                        delivery.delivered = true;
+                        delivery.complete();
                     }
                     result
                 })
@@ -229,7 +230,7 @@ impl PyStream {
                 .map_err(|error| PyRuntimeError::new_err(error.to_string()))?
             } else {
                 control.check_async().await?;
-                delivery.delivered = true;
+                delivery.complete();
                 Ok(None)
             }
         })
@@ -287,11 +288,20 @@ pub fn create(
     pool.inner.stats().map_err(from_core)?;
     let params = Converter::new(py)?.params(params)?;
     let as_dict = matches!(format, Format::Rows(true));
-    let core = match format {
-        Format::Arrow => pool.inner.stream_arrow(sql, params, batch_rows, timeout),
-        Format::Rows(_) => pool.inner.stream(sql, params, batch_rows, as_dict, timeout),
-    }
-    .map_err(from_core)?;
+    let format = match format {
+        Format::Arrow => StreamFormat::Arrow,
+        Format::Rows(unique_names) => StreamFormat::Rows { unique_names },
+    };
+    let core = pool
+        .inner
+        .open_stream(StreamQuery {
+            sql,
+            params,
+            timeout,
+            batch_rows,
+            format,
+        })
+        .map_err(from_core)?;
     Ok(crate::stream::PyStream::new(
         core,
         as_dict,

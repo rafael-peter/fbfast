@@ -54,6 +54,7 @@ pub fn options(cancellation: &Cancellation) -> QueryOptions<'_> {
     QueryOptions {
         first: false,
         unique_names: false,
+        prevalidated: false,
         deadline: None,
         cancellation,
         cleaning: &|| Ok(false),

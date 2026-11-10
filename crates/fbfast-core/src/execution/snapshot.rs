@@ -23,6 +23,8 @@ impl ExecutionConnection {
         }
         let deadline = deadline(timeout)?;
         check_deadline(deadline)?;
+        self.release_ready()?;
+        self.restartable = false;
         if let Err(error) = self.native.begin(true, self.config.lock_timeout, None) {
             self.healthy = false;
             return Err(error.into());

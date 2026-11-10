@@ -30,3 +30,17 @@ async def asynchronous(pool: Pool, snapshot: Snapshot) -> None:
     assert_type(await snapshot.fetch_one_async('sql', model=Order), Order | None)
     assert_type(await fbfast.fetch_all_async('sql', model=Order), list[Order])
     assert_type(await fbfast.fetch_one_async('sql', model=Order), Order | None)
+
+
+def query_group_results_are_typed(pool: fbfast.Pool) -> None:
+    orders = fbfast.Query.fetch_all("SELECT ID FROM T", model=Order)
+    total = fbfast.Query.fetch_val("SELECT 1 FROM RDB$DATABASE")
+    plan = fbfast.Query.explain("SELECT 1 FROM RDB$DATABASE")
+    rows = fbfast.Query.fetch_all("SELECT 1 FROM RDB$DATABASE", as_dict=True)
+    results = pool.run_all([orders, total, plan, rows], concurrency=4)
+    assert_type(results[orders], list[Order])
+    assert_type(results[plan], str)
+    assert_type(results[rows], list[dict[str, Any]])
+    with pool.run_many([orders, plan]) as group:
+        for done in group:
+            assert_type(done.index, int)

@@ -72,9 +72,11 @@ def consumer():
             pass
         else:
             raise RuntimeError("Read-only policy failed")
-        if pool.fetch_one("SELECT MON$READ_ONLY, MON$ISOLATION_MODE FROM MON$TRANSACTIONS "
-                          "WHERE MON$TRANSACTION_ID = CURRENT_TRANSACTION") != (1, 4):
-            raise RuntimeError("Effective transaction is not READ ONLY READ CONSISTENCY")
+        effective = pool.fetch_one("SELECT MON$READ_ONLY, MON$ISOLATION_MODE FROM MON$TRANSACTIONS "
+                                   "WHERE MON$TRANSACTION_ID = CURRENT_TRANSACTION")
+        if effective != (1, 4):
+            raise RuntimeError("Effective transaction is not READ ONLY READ CONSISTENCY: "
+                               f"(MON$READ_ONLY, MON$ISOLATION_MODE) = {effective}")
 
     async def check_async():
         async with fbfast.Pool(config) as pool:
@@ -96,6 +98,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--sdk", type=Path)
     parser.add_argument("--consumer", action="store_true")
+    parser.add_argument("--examples", type=Path,
+                        help="also run every *.py in this directory against the fixture")
     args = parser.parse_args()
     if args.consumer:
         consumer()
@@ -112,6 +116,19 @@ def main():
             # wheel and installed optional consumers are visible to this process.
             subprocess.run([sys.executable, "-I", str(Path(__file__).resolve()), "--consumer"],
                            env=env, check=True, timeout=90)
+            if args.examples is not None:
+                run_examples(args.examples.resolve(), config, env)
+
+
+def run_examples(directory: Path, config: dict, env: dict) -> None:
+    """Examples read FB_* like an application would; only the installed wheel is used."""
+    settings = {**env, **{f"FB_{key.upper()}": str(value) for key, value in config.items()}}
+    scripts = sorted(directory.glob("*.py"))
+    if not scripts:
+        raise SystemExit(f"No examples found in {directory}")
+    for script in scripts:
+        print(f"example: {script.name}", flush=True)
+        subprocess.run([sys.executable, "-I", str(script)], env=settings, check=True, timeout=120)
 
 
 if __name__ == "__main__":

@@ -89,6 +89,23 @@ impl Reader {
         self.integer(field, 1, 1, i64::MAX as u64).map(Some)
     }
 
+    /// Optional integer with an explicit inclusive range and no default.
+    pub fn optional_range(
+        &mut self,
+        field: &str,
+        minimum: u64,
+        maximum: u64,
+    ) -> Result<Option<u64>, Error> {
+        if self.is_none(field) {
+            self.0.remove(field);
+            return Ok(None);
+        }
+        if !self.0.contains_key(field) {
+            return Ok(None);
+        }
+        self.integer(field, minimum, minimum, maximum).map(Some)
+    }
+
     pub fn seconds(&mut self, field: &str, default: f64) -> Result<f64, Error> {
         let value = match self.0.remove(field) {
             None => Some(default),

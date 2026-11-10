@@ -26,13 +26,13 @@ with Pool(FirebirdConfig()) as pool:
         print(order.ID, order.CUSTOMER)
 ```
 
-> The `model=` API was introduced in 0.2.0. The 0.2.1 security update is
-> available from [PyPI](https://pypi.org/project/fbfast/0.2.1/).
-
 ## Why fbfast?
 
 - **One client, multiple destinations.** Fetch application objects, send JSON to
   an HTTP consumer, or hand native Arrow buffers to your analytics stack.
+- **Built for slow links.** A pooled query usually answers after a single
+  network round trip, small BLOBs travel inside their rows, and independent
+  queries run together with `run_all`.
 - **Less Python work for bulk data.** JSON and Arrow are built in Rust without
   materializing an intermediate table of Python tuples or dictionaries.
 - **Explicit resource control.** Bounded connection pools, statement caching,
@@ -40,7 +40,7 @@ with Pool(FirebirdConfig()) as pool:
 - **Precision that survives the trip.** Exact decimals, wide integers, BLOBs,
   and explicit timezone handling, with documented conversion rules.
 - **Async without a second API to learn.** Await `*_async` methods and use
-  `async with` for pool, snapshot, and stream lifecycles.
+  `async with` for pools, snapshots, streams and query groups.
 - **Wheels with the client included.** Consumers of a compatible wheel do not
   need Rust, a C++ compiler, or a separate Firebird client installation.
 
@@ -51,31 +51,25 @@ use a database account and role with appropriate read permissions as well.
 ## Install
 
 ```sh
-uv add fbfast                  # or: pip install fbfast
-uv add 'fbfast[arrow]'         # PyArrow output
-uv add 'fbfast[polars]'        # Polars output; PyArrow is not required
+pip install fbfast                 # or: uv add fbfast
+pip install "fbfast[pydantic]"     # typed results with Pydantic v2
+pip install "fbfast[arrow]"        # PyArrow output
+pip install "fbfast[polars]"       # Polars output; PyArrow is not required
 ```
 
-For typed models in this source revision, build a wheel as described under
-[Development](#development), then install it with the Pydantic extra:
-
-```sh
-pip install '/absolute/path/to/fbfast-VERSION-PLATFORM.whl[pydantic]'
-```
-
-Pydantic v2 is optional. Importing fbfast and fetching ordinary rows do not
-import Pydantic. Arrow and Polars are also optional dependencies.
+With uv: `uv add "fbfast[pydantic]"`, and likewise for the other extras. All
+extras are optional: importing fbfast and fetching ordinary rows never imports
+Pydantic, PyArrow or Polars.
 
 | Platform | Architectures | Python |
 | --- | --- | --- |
-| macOS | Apple Silicon, Intel | CPython 3.11–3.14 |
-| Linux | aarch64, x86_64 | CPython 3.11–3.14 |
-| Windows | x86_64 | CPython 3.11–3.14 |
+| macOS | Apple Silicon, Intel | CPython 3.11–3.15 |
+| Linux (glibc) | aarch64, x86_64 | CPython 3.11–3.15 |
+| Windows | x86_64 | CPython 3.11–3.15 |
 
 Wheels are specific to the OS, architecture, and Python ABI. Free-threaded
-Python and `abi3` wheels are not currently supported. A reachable Firebird 5
-server is required for queries. See the [release guide](docs/releasing.md) and
-[recorded platform validation](docs/progress.md).
+Python and `abi3` wheels are not supported. A reachable Firebird 5.0.x server is
+required for queries; 5.0.4 or newer is recommended.
 
 ## Connect in seconds
 
@@ -99,7 +93,7 @@ with Pool(FirebirdConfig()) as pool:
 
 Configuration precedence is **explicit argument → environment → `.env` →
 default**. Database, user, and password are required. `env_file=False` disables
-`.env` loading; `from_env(prefix="FB_BI_")` supports a custom environment prefix.
+`.env` loading; `FirebirdConfig.from_env("FB_BI_")` reads another prefix.
 Configuration is immutable and its representation hides the password.
 
 ```python
@@ -108,25 +102,20 @@ config = FirebirdConfig(
     min_idle=1,
     query_timeout=30.0,
     max_result_rows=100_000,
-    max_result_bytes=512 * 1024 * 1024,
     env_file=False,
 )
 ```
 
-Omitted query timeouts inherit `query_timeout`; `timeout=None` disables the
-individual query deadline. `max_result_rows` defaults to `None` (unlimited)
-and applies to materialized results. `max_result_bytes` defaults to 512 MiB and
-limits each result materialized as rows, dictionaries, Pydantic models, JSON,
-Arrow, or Polars. Set it to `None` only when the caller provides another bound. It is an
-accounting limit for retained core buffers, not an exact process-RSS ceiling;
-temporary conversion buffers and concurrent results can use more memory.
-Streams use `batch_bytes`, `prefetch_batches`, and backpressure instead of a
-cumulative byte limit.
+Omitted query timeouts inherit `query_timeout` (30 s); `timeout=None` disables
+an individual query deadline. `max_result_bytes` (512 MiB by default) and
+`max_result_rows` bound each materialized result; streams use `batch_bytes`,
+`prefetch_batches` and backpressure instead.
 
 Wire encryption defaults to `wire_crypt="required"`, with no silent downgrade.
 `"enabled"` negotiates encryption but permits an unencrypted connection;
-`"disabled"` disables it. Boolean `True`/`False` map to required/disabled.
-The current executor requires UTF8 connections.
+`"disabled"` disables it. Connections use UTF8; column charsets are converted by
+the server. Every option, its `FB_*` variable and its default are listed in the
+[configuration guide](https://github.com/rafael-peter/fbfast/blob/main/docs/guide/configuration.md).
 
 ## Security boundary
 
@@ -137,10 +126,10 @@ Selectable procedures, functions, UDRs, generators, and temporary tables can
 have effects that transaction rollback does not undo.
 
 Run the library with a dedicated database account and a minimal role containing
-only the required `SELECT` grants. Do not grant unnecessary `EXECUTE` or
-`USAGE`. If SQL comes from an HTTP endpoint, an end user, or a language model,
-place an allowlist of application queries above the driver. See the complete
-[security model and deployment guidance](docs/security.md).
+only the required `SELECT` grants. If SQL comes from an HTTP endpoint, an end
+user, or a language model, place an allowlist of application queries above the
+driver. See the complete
+[security model](https://github.com/rafael-peter/fbfast/blob/main/docs/security.md).
 
 ## Choose your result
 
@@ -156,7 +145,9 @@ place an allowlist of application queries above the driver. See the complete
 | `stream_json` | NDJSON or JSON-array byte chunks | Incremental delivery |
 | `stream_arrow` | Owned `ArrowBatch` objects | Columnar streaming |
 
-All methods above have async counterparts. Bind values with `?` placeholders:
+Every method has an `_async` counterpart. Bind values with `?` placeholders,
+using the Python type that matches the column (`datetime` for `TIMESTAMP`,
+`Decimal` for `NUMERIC`...):
 
 ```python
 rows = pool.fetch_all("SELECT ID FROM ORDERS WHERE ID > ?", [100])
@@ -180,63 +171,80 @@ class Order(BaseModel):
 order = pool.fetch_one("SELECT ID, CUSTOMER FROM ORDERS WHERE ID = ?", [101], model=Order)
 # Order | None
 
-orders = pool.fetch_all("SELECT ID, CUSTOMER FROM ORDERS", model=Order)
-# list[Order]
-
 orders = await pool.fetch_all_async("SELECT ID, CUSTOMER FROM ORDERS", model=Order)
 # list[Order]
 ```
 
-`model=` selects column-name dictionaries internally; `as_dict=True` is
-redundant when a model is supplied. Column names are not silently renamed: use
-SQL aliases or Pydantic validation aliases. Empty results produce `None` or
-`[]`. Pydantic's `model_validate` applies your model's coercion, strictness,
-extra-field policy, and custom validators. Validation errors propagate as
-`pydantic.ValidationError`; invalid rows are not silently skipped.
-
-The same option works on snapshots and module-level named-pool helpers.
-Streaming does not yet accept `model=`.
-
-Validation happens after fetching, outside the query deadline. Ordinary pool
-queries have completed their database work at that point; an explicit snapshot
-still owns its connection until its context closes. Async model validation runs
-in a thread, so validators must be safe to run outside the calling thread.
-Cancelling the await does not forcibly stop a validator already running.
-
-Model construction costs CPU and memory compared with raw rows. The conversion
-is comparable to manually validating each dictionary; no throughput improvement
-is claimed. Calls without `model=` keep the native row-return path.
+Firebird returns unquoted column names in upper case, and fbfast never renames
+them: name fields in upper case or use validation aliases. Column names must be
+unique. Validation runs after fetching, outside the query deadline (in a thread
+for async calls); `pydantic.ValidationError` propagates and rows are never
+skipped silently. The same `model=` option works on snapshots and query groups.
 
 ## Async services and named pools
 
 ```python
-import fbfast
 from contextlib import asynccontextmanager
+
+import fbfast
 from fastapi import FastAPI
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await fbfast.init_pool(fbfast.FirebirdConfig(), name="reports")
+    await fbfast.init_pool_async(fbfast.FirebirdConfig(), name="reports")
     try:
         yield
     finally:
-        await fbfast.close_pool("reports")
+        await fbfast.close_pool_async("reports")
 
 app = FastAPI(lifespan=lifespan)
 
 @app.get("/order-count")
 async def order_count():
-    return await fbfast.fetch_val_async("SELECT COUNT(*) FROM ORDERS", pool="reports")
+    return await fbfast.get_pool("reports").fetch_val_async("SELECT COUNT(*) FROM ORDERS")
 ```
 
-Named helpers resolve an explicitly initialized pool; queries never create a
-hidden global pool. Omit the name to use `"default"`. Synchronous applications
-can use `init_pool_sync` and `close_pool_sync`.
+`get_pool(name)` returns an explicitly initialized pool from anywhere in the
+process; queries never create a hidden global pool. Omit the name to use
+`"default"`. Synchronous applications use `init_pool()` and `close_pool()`.
+Module functions such as `fbfast.fetch_val(sql, pool="reports")` are shortcuts
+for `get_pool("reports").fetch_val(sql)`.
 
-Initialize pools after process creation. Inherited pools are rejected after
-fork. Closing drains the pool; if cleanup times out or is cancelled, retry
-closing before reusing the name. Native calls stuck in network/attach work may
-outlive a caller's timeout, and still count against the pool capacity.
+The lifecycle follows one rule: no suffix blocks, `_async` (and `aclose`) is a
+coroutine. `pool.close()` / `await pool.aclose()`, `pool.warmup()` /
+`await pool.warmup_async()`. Code written for 0.2 that awaits `pool.close()`
+now fails with `TypeError`; the old `*_sync` names still work with a
+`DeprecationWarning` until 0.4.0.
+
+Create pools after the process starts (after `fork()`); inherited pools are
+rejected in the child.
+
+## Several queries at once
+
+Describe each query with `fbfast.Query`, then run them together. At most
+`pool_size` queries hold a connection at a time; the rest wait outside the pool
+queue, so other callers keep being served.
+
+```python
+from fbfast import Query
+
+orders = Query.fetch_all("SELECT ID, CUSTOMER FROM ORDERS WHERE STATUS = ?", ["OPEN"],
+                         model=Order)
+total = Query.fetch_val("SELECT SUM(TOTAL) FROM ORDERS")
+
+results = pool.run_all([orders, total], timeout=30.0)
+results[orders]  # list[Order]
+
+with pool.run_many([orders, total]) as group:  # in completion order
+    for done in group:
+        print(done.query.sql, done.result())
+
+results = await pool.run_all_async([orders, total])
+```
+
+With 50 ms of latency, N small queries take about `ceil(N / pool_size)` times
+one query. `fail_fast=True` (the default) cancels the rest on the first error;
+leaving a `run_many` block cancels unfinished queries.
 
 ## Stream without retaining the entire result
 
@@ -253,149 +261,120 @@ async with pool.stream_json_async(
 ```
 
 Always use the context manager, especially when stopping early. Streams are
-lazy, single-consumer resources. `batch_rows` defaults to `fetch_size`;
-`batch_bytes` also bounds batches, although one oversized record may occupy its
-own batch. `prefetch_batches` bounds lookahead; zero disables prefetch.
-Retaining batches in your own code still consumes memory.
+lazy, single-consumer resources. The query deadline includes consuming the
+stream; `stream_idle_timeout` bounds how long the producer waits for you. For
+HTTP streaming, keep the stream context **inside the response generator**.
 
-The query deadline includes stream consumption and native row conversion;
-`stream_idle_timeout` bounds producer idle time. `timeout=None` does not disable
-the idle timeout. Cleanup errors propagate before successful end-of-stream.
-For HTTP streaming, keep the stream context **inside the response generator**.
-An error after headers have been sent terminates the body; it cannot replace
-the response with a new error status.
-
-### Native JSON
-
-`fetch_json` returns a compact JSON array (`b"[]"` when empty). Streaming supports
-`format="ndjson"` for complete newline-delimited records or `format="array"`
-for one JSON document split across chunks. Array chunks are not individually
-parseable documents. An interrupted array is incomplete.
-
-| Option | Default | Alternative |
-| --- | --- | --- |
-| `orient` | `"records"` — unique column names | `"values"` — arrays |
-| `json_integers` | `"safe"` — BIGINT/INT128 as strings | `"number"` |
-| `json_decimals` | `"string"` — exact decimal text | `"number"` — exact numeric tokens |
-| `json_binary` | `"error"` | `"base64"` |
-| `json_non_finite` | `"error"` | `"null"` |
-
-SMALLINT/INTEGER remain JSON numbers. Numeric JSON tokens can exceed a
-consumer's precision, particularly in JavaScript. The native serializer does
-not route exact decimals through floating point.
+`fetch_json` returns a compact JSON array. Exact decimals and BIGINT/INT128 are
+JSON strings by default (`json_decimals="string"`, `json_integers="safe"`) so
+JavaScript consumers do not lose precision; pass `"number"` to emit numbers.
 
 ### Arrow and Polars
 
 ```python
 table = pool.fetch_arrow("SELECT ID, AMOUNT FROM ORDERS")
 frame = await pool.fetch_polars_async("SELECT ID, AMOUNT FROM ORDERS")
-```
 
-Arrow preserves described SQL types even for empty or initially NULL results,
-and carries SQL metadata on fields. INT128 decimals use Decimal256. Polars
-imports Arrow buffers with `rechunk=False`; unsupported Decimal256 columns
-raise by default. Set `unsupported="string"` for an explicit exact-text fallback.
-Use distinct SQL aliases for duplicate column names.
-
-`stream_arrow` yields owned batches with `num_rows`, `num_columns`, `nbytes`,
-`schema`, and the Arrow C Array interface. It requires neither PyArrow nor
-Polars. Retained batches remain valid after the stream closes.
-
-```python
 import pyarrow as pa
 
 with pool.stream_arrow("SELECT ID, AMOUNT FROM ORDERS") as stream:
-    reader = pa.RecordBatchReader.from_stream(stream)
-    for batch in reader:
+    for batch in pa.RecordBatchReader.from_stream(stream):
         process_arrow_batch(batch)
 ```
 
-The blocking C Stream export is single-use and exclusive with Python iteration.
-Async Arrow streams use batch iteration instead of a blocking C Stream export.
-See the [Arrow contracts](docs/decisions/0017-arrow-streams.md).
+Arrow preserves described SQL types, even for empty results. INT128-based
+values (including `SUM()` over `BIGINT` or `NUMERIC(18, x)`) use Decimal256,
+which Polars cannot hold: `fetch_polars` raises unless you `CAST` in SQL or pass
+`unsupported="string"` for exact decimal text. `stream_arrow` batches implement
+the Arrow C Data Interface and need neither PyArrow nor Polars.
 
 ## Consistent reads and precise types
 
 Use a snapshot when several queries must see the same database state:
 
 ```python
-with pool.snapshot(timeout=120.0) as session:
+with pool.snapshot(timeout=120.0) as session:     # or: async with pool.snapshot()
     total = session.fetch_val("SELECT COUNT(*) FROM ORDERS")
     orders = session.fetch_all("SELECT ID, CUSTOMER FROM ORDERS", model=Order)
 ```
 
 A snapshot reserves one connection and accepts one operation at a time. Its
-deadline includes time between queries; disabling an individual query timeout
-does not disable the session deadline. Errors/cancellation of native operations
-end the session. Queries on the parent pool use independent transactions.
-Use `async with pool.snapshot_async(...)` for async access.
+deadline (`snapshot_timeout`, 300 s by default) includes the time between
+queries. Any error ends the session. Each query costs about one round trip, so a
+snapshot is also the fastest way to run many small sequential queries over a
+slow link.
 
-- NUMERIC/DECIMAL and INT128 preserve supported exact precision. DECFLOAT uses
+- NUMERIC/DECIMAL and INT128 preserve exact precision. DECFLOAT uses
   `decimal.Decimal`, including signed zero and special values. Binding rejects
   precision loss rather than silently rounding.
 - Naive SQL dates/times remain naive. Temporal precision is 100 microseconds.
-- TIMESTAMP WITH TIME ZONE maps to aware `datetime`; incompatible or missing
-  Python zone rules raise a conversion error.
-- TIME WITH TIME ZONE maps to immutable `TimeWithZone(utc_time, zone)` rather
-  than inventing a calendar date. JSON uses explicit UTC/zone objects; Arrow
-  uses structured timezone fields.
-- BLOB conversion follows the configured text/binary policies and cell limits.
+- TIMESTAMP WITH TIME ZONE maps to aware `datetime`; TIME WITH TIME ZONE maps to
+  `TimeWithZone(utc_time, zone)`.
+- Text BLOBs become `str` and binary BLOBs `bytes`, bounded by `max_blob_bytes`.
 
-Detailed contracts: [BLOBs](docs/decisions/0013-transactional-blobs.md),
-[DECFLOAT](docs/decisions/0014-exact-decfloat.md),
-[timezones](docs/decisions/0015-time-zones.md), and
-[snapshots](docs/decisions/0010-public-snapshots.md).
+## Latency and diagnostics
 
-## Performance, with evidence
+fbfast 0.3.0 is tuned for databases reached over a WAN, VPN or tunnel:
 
-fbfast focuses on native output paths, bounded execution, and predictable
-resource ownership. It does **not** claim that Rust makes every query faster.
+- A cached query in a pool answers after **1 round trip** (execute plus the
+  first batch) instead of 4–6. After each complete result, the session reset
+  (`ALTER SESSION RESET`) also starts the next query's transaction, all after
+  the reply and while the connection stays reserved. A transaction left unused
+  for `ready_transaction_timeout` (2 s) is rolled back; then the next query
+  costs 2 round trips (begin, execute). A failure in that cleanup discards the
+  connection and is counted in `stats()["cleanup_errors"]`.
+- Idle connections are pinged in the background after `health_check_after`,
+  which also keeps tunnels and NAT mappings alive. A connection that fails
+  before any SQL is sent is replaced once; SQL already sent is never repeated.
+- With Firebird 5.0.3+ servers, BLOBs up to 65,535 bytes travel inside the row.
+  At 20 ms of latency, 1,000 rows with a small text BLOB went from 28.3 s in
+  0.2.1 to 0.19 s (firebird-driver: 0.22 s), and 32 small queries run together
+  from 0.47 s to 0.19 s.
+- `wire_compression=True` requests zlib compression on every platform; check
+  `session_info()["wire_compressed"]` to see whether the server agreed.
 
-In the recorded local comparison of 100,000 rows with two integer columns,
-fbfast's median JSON time was 0.530 s versus 0.548 s for the tuned
-`firebird-driver` baseline; reported JSON RSS was 36.5 versus 75.6 MiB. Tuple
-time was 0.540 versus 0.516 s. These results describe one workload and environment,
-not a universal speedup. They predate Pydantic support.
+```python
+config = FirebirdConfig(diagnostics=True)
+with Pool(config) as pool:
+    pool.fetch_all("SELECT ID FROM ORDERS")
+    print(pool.diagnostics()[-1])  # seconds and round trips per phase
+    print(pool.stats())            # counters, including wire_roundtrips
+    print(pool.session_info())     # wire_encrypted, wire_compressed, inline_blobs...
+```
 
-See the [benchmark methodology](benchmarks/README.md),
-[recorded results](benchmarks/results/20261015T175028Z-comparison/), and
-[validation history](docs/progress.md). Parallel extraction and wider performance
-coverage remain on the [roadmap](docs/roadmap.md).
+After DDL changes a table, call `pool.clear_statement_cache()` (or
+`await pool.clear_statement_cache_async()`), or recreate the pool.
+
+fbfast does not claim that Rust makes every query faster: on a local server the
+database usually dominates. Measurements, methodology and raw results are in the
+[performance guide](https://github.com/rafael-peter/fbfast/blob/main/docs/guide/performance.md)
+and [benchmarks](https://github.com/rafael-peter/fbfast/tree/main/benchmarks).
+
+## Documentation
+
+- [Recipes](https://github.com/rafael-peter/fbfast/blob/main/docs/guide/recipes.md):
+  FastAPI, NDJSON over HTTP, Polars/Parquet ETL, Arrow streaming, reports,
+  Pydantic, concurrent queries
+- [Errors](https://github.com/rafael-peter/fbfast/blob/main/docs/guide/errors.md)
+  and [troubleshooting](https://github.com/rafael-peter/fbfast/blob/main/docs/guide/troubleshooting.md)
+- [Configuration](https://github.com/rafael-peter/fbfast/blob/main/docs/guide/configuration.md),
+  [performance](https://github.com/rafael-peter/fbfast/blob/main/docs/guide/performance.md)
+  and the [API reference](https://github.com/rafael-peter/fbfast/blob/main/docs/guide/api.md)
+- [Runnable examples](https://github.com/rafael-peter/fbfast/tree/main/examples)
+- [Release notes](https://github.com/rafael-peter/fbfast/tree/main/docs/releases)
+- For code assistants: [`llms.txt`](https://github.com/rafael-peter/fbfast/blob/main/llms.txt);
+  the installed package also ships `fbfast/llms.txt`.
 
 ## Development
 
-Source builds require Rust 1.91.1, a C++ toolchain, a supported CPython, and a
-Firebird 5.0.x SDK/runtime (5.0.3 or newer). Published wheels bundle the pinned
-Firebird 5.0.3 client and test servers 5.0.3 and 5.0.4. The build does not
-download the client implicitly. Install development dependencies from
-`requirements-dev.txt`.
+Building from source, checks and the disposable test fixture are described in
+[docs/development.md](https://github.com/rafael-peter/fbfast/blob/main/docs/development.md).
 
-```sh
-python3.14 scripts/build_vendor.py --release --out dist/vendor \
-  --client-root /Library/Frameworks/Firebird.framework
-python3.14 scripts/verify_vendor.py --package dist/vendor/fbfast
-```
+## License
 
-Use the appropriate SDK path for your platform. The build writes wheels to
-`dist/wheels/` and a complete copyable package to `dist/vendor/fbfast/`.
-Install the wheel with uv/pip, or copy the entire vendor package to an importable
-location. Do not mix files from different builds. Stop consumers before updating
-loaded native libraries, and remove an old vendored copy when switching to pip.
-
-```python
-import fbfast
-
-print(fbfast.build_info())   # Build/ABI metadata; no database connection
-print(fbfast.client_info())  # Loads the client; no database connection
-```
-
-`pool.stats()` exposes pool counters. `pool.explain(sql, params)` returns the
-execution plan. Before schema changes, stop new work, drain active queries, and
-clear statement caches with `clear_statement_cache_sync()` / await
-`clear_statement_cache()`, or recreate the pool. Cache invalidation does not
-interrupt active cursors; cancelling the wait does not undo the request.
-
-For repository checks and disposable-fixture tests, see
-[development and build storage](docs/development.md). For release automation,
-see [releasing](docs/releasing.md). Architecture decisions and historical
-validation notes under `docs/` currently include Portuguese documentation.
+fbfast is licensed under either of
+[Apache License 2.0](https://github.com/rafael-peter/fbfast/blob/main/LICENSE-APACHE) or
+[MIT license](https://github.com/rafael-peter/fbfast/blob/main/LICENSE-MIT), at your option
+(`MIT OR Apache-2.0`). The bundled official Firebird client and its libraries
+keep their own licenses (IPL and IDPL for Firebird); wheels include them under
+`fbfast/_licenses/`.

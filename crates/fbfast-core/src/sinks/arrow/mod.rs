@@ -30,6 +30,8 @@ pub struct ArrowBuilder {
     pub schema: SchemaRef,
     columns: Vec<ColumnBuilder>,
     pub rows: usize,
+    /// Decoded bytes appended since the last `finish` (batch split estimate).
+    pub pending_bytes: usize,
 }
 impl ArrowBuilder {
     pub fn new(
@@ -52,6 +54,7 @@ impl ArrowBuilder {
             schema,
             columns,
             rows: 0,
+            pending_bytes: 0,
         })
     }
     pub fn push(
@@ -62,6 +65,7 @@ impl ArrowBuilder {
     ) -> Result<(), Error> {
         for (index, column) in self.columns.iter_mut().enumerate() {
             let value = plan.value_with_native(index, row, native)?;
+            self.pending_bytes = self.pending_bytes.saturating_add(value.retained_bytes());
             column.append(value)?;
         }
         self.rows += 1;
@@ -72,6 +76,7 @@ impl ArrowBuilder {
         let batch = RecordBatch::try_new(self.schema.clone(), columns)
             .map_err(|_| conversion("Invalid Arrow record batch"))?;
         self.rows = 0;
+        self.pending_bytes = 0;
         Ok(batch)
     }
 }

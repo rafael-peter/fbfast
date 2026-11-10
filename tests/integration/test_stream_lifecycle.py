@@ -111,7 +111,7 @@ def test_stream_cancel_during_conversion_stops_objects_without_cancelling_next_q
                 async with pool.stream_async(DECIMALS, batch_rows=2000, timeout=None) as stream:
                     active = asyncio.create_task(anext(stream))
                     await until(lambda: len(calls) >= 5)
-                    assert pool.stats()["idle"] == 1
+                    await until(lambda: pool.stats()["idle"] == 1)
                     active.cancel()
                     await active
             await until(lambda: pool.stats()["cancellations"] == 1)

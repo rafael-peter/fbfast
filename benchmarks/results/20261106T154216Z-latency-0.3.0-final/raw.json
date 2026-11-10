@@ -1,0 +1,2014 @@
+[
+  {
+    "rtt_ms": 0,
+    "driver": "fbfast",
+    "case": "pk",
+    "samples_s": [
+      0.023606041999300942,
+      0.0023199169954750687,
+      0.00036454101791605353
+    ],
+    "errors": [],
+    "roundtrips": [
+      13,
+      3,
+      1
+    ]
+  },
+  {
+    "rtt_ms": 0,
+    "driver": "fbfast",
+    "case": "narrow1000",
+    "samples_s": [
+      0.007249957998283207,
+      0.006540000002132729,
+      0.006389458023477346
+    ],
+    "errors": [],
+    "roundtrips": [
+      3,
+      2,
+      2
+    ]
+  },
+  {
+    "rtt_ms": 0,
+    "driver": "fbfast",
+    "case": "narrow100k",
+    "samples_s": [
+      0.5668202080123592,
+      0.5970707089873031,
+      0.6301402080280241
+    ],
+    "errors": [],
+    "roundtrips": [
+      101,
+      101,
+      101
+    ]
+  },
+  {
+    "rtt_ms": 0,
+    "driver": "fbfast",
+    "case": "wide64",
+    "samples_s": [
+      0.9774587910214905,
+      1.1079147499985993,
+      1.2694804999919143
+    ],
+    "errors": [],
+    "roundtrips": [
+      117,
+      117,
+      117
+    ]
+  },
+  {
+    "rtt_ms": 0,
+    "driver": "fbfast",
+    "case": "blob_small",
+    "samples_s": [
+      0.0418971250182949,
+      0.04115345800528303,
+      0.066986083984375
+    ],
+    "errors": [],
+    "roundtrips": [
+      5,
+      3,
+      3
+    ]
+  },
+  {
+    "rtt_ms": 0,
+    "driver": "fbfast",
+    "case": "blob_medium",
+    "samples_s": [
+      0.18385295799816959,
+      0.18848041599267162,
+      0.1902324169932399
+    ],
+    "errors": [],
+    "roundtrips": [
+      11,
+      10,
+      10
+    ]
+  },
+  {
+    "rtt_ms": 0,
+    "driver": "fbfast",
+    "case": "blob_large",
+    "samples_s": [
+      2.084622708003735,
+      2.2755355419940315,
+      2.370270499988692
+    ],
+    "errors": [],
+    "roundtrips": [
+      141,
+      143,
+      141
+    ]
+  },
+  {
+    "rtt_ms": 0,
+    "driver": "fbfast",
+    "case": "blob_binary",
+    "samples_s": [
+      0.0846946669917088,
+      0.08343587501440197,
+      0.093253500002902
+    ],
+    "errors": [],
+    "roundtrips": [
+      7,
+      5,
+      5
+    ]
+  },
+  {
+    "rtt_ms": 0,
+    "driver": "fbfast",
+    "case": "blob_latin1",
+    "samples_s": [
+      0.07820679200813174,
+      0.06485970801440999,
+      0.06954737499472685
+    ],
+    "errors": [],
+    "roundtrips": [
+      4,
+      4,
+      5
+    ]
+  },
+  {
+    "rtt_ms": 0,
+    "driver": "fbfast",
+    "case": "list_with",
+    "samples_s": [
+      0.008458082971628755,
+      0.007673749991226941,
+      0.007338958006585017
+    ],
+    "errors": [],
+    "roundtrips": [
+      2,
+      1,
+      1
+    ]
+  },
+  {
+    "rtt_ms": 0,
+    "driver": "fbfast",
+    "case": "cast_tight",
+    "samples_s": [
+      0.03387462499085814,
+      0.02643283302313648,
+      0.013928083993960172
+    ],
+    "errors": [],
+    "roundtrips": [
+      3,
+      2,
+      2
+    ]
+  },
+  {
+    "rtt_ms": 0,
+    "driver": "fbfast",
+    "case": "cast_8191",
+    "samples_s": [
+      0.016033749998314306,
+      0.01981591701041907,
+      0.018759667000267655
+    ],
+    "errors": [],
+    "roundtrips": [
+      33,
+      33,
+      33
+    ]
+  },
+  {
+    "rtt_ms": 0,
+    "driver": "fbfast",
+    "case": "concurrent8",
+    "mode": "threads",
+    "samples_s": [
+      0.0029553750064224005,
+      0.0015705840196460485,
+      0.005714374972740188
+    ]
+  },
+  {
+    "rtt_ms": 0,
+    "driver": "fbfast",
+    "case": "concurrent8",
+    "mode": "gather",
+    "samples_s": [
+      0.004003249981906265,
+      0.005802999978186563,
+      0.003724125010194257
+    ]
+  },
+  {
+    "rtt_ms": 0,
+    "driver": "fbfast",
+    "case": "concurrent8",
+    "mode": "run_all",
+    "samples_s": [
+      0.0014940409746486694,
+      0.0013304579770192504,
+      0.001096042018616572
+    ]
+  },
+  {
+    "rtt_ms": 0,
+    "driver": "fbfast",
+    "case": "concurrent8",
+    "mode": "run_all_async",
+    "samples_s": [
+      0.003718833002494648,
+      0.004200708004646003,
+      0.004837791988393292
+    ]
+  },
+  {
+    "rtt_ms": 0,
+    "driver": "fbfast",
+    "case": "concurrent32",
+    "mode": "threads",
+    "samples_s": [
+      0.004515458014793694,
+      0.004161082993960008,
+      0.004436040995642543
+    ]
+  },
+  {
+    "rtt_ms": 0,
+    "driver": "fbfast",
+    "case": "concurrent32",
+    "mode": "gather",
+    "samples_s": [
+      0.008415624994086102,
+      0.014695207995828241,
+      0.008645416994113475
+    ]
+  },
+  {
+    "rtt_ms": 0,
+    "driver": "fbfast",
+    "case": "concurrent32",
+    "mode": "run_all",
+    "samples_s": [
+      0.00418254200485535,
+      0.004075584001839161,
+      0.004220874980092049
+    ]
+  },
+  {
+    "rtt_ms": 0,
+    "driver": "fbfast",
+    "case": "concurrent32",
+    "mode": "run_all_async",
+    "samples_s": [
+      0.011942749988520518,
+      0.00919966699439101,
+      0.012076833983883262
+    ]
+  },
+  {
+    "rtt_ms": 0,
+    "driver": "fbfast",
+    "case": "concurrent128",
+    "mode": "threads",
+    "samples_s": [
+      0.018448707996867597,
+      0.018223166989628226,
+      0.020590458996593952
+    ]
+  },
+  {
+    "rtt_ms": 0,
+    "driver": "fbfast",
+    "case": "concurrent128",
+    "mode": "gather",
+    "samples_s": [
+      0.035008167003979906,
+      0.03187500001513399,
+      0.03214966697851196
+    ]
+  },
+  {
+    "rtt_ms": 0,
+    "driver": "fbfast",
+    "case": "concurrent128",
+    "mode": "run_all",
+    "samples_s": [
+      0.01713954098522663,
+      0.01905983401229605,
+      0.018197500001406297
+    ]
+  },
+  {
+    "rtt_ms": 0,
+    "driver": "fbfast",
+    "case": "concurrent128",
+    "mode": "run_all_async",
+    "samples_s": [
+      0.03943624999374151,
+      0.034716458001639694,
+      0.035772542003542185
+    ]
+  },
+  {
+    "rtt_ms": 0,
+    "driver": "firebird-driver",
+    "case": "pk",
+    "samples_s": [
+      0.0007727089978288859,
+      0.0007508329872507602,
+      0.0007298339914996177
+    ],
+    "errors": []
+  },
+  {
+    "rtt_ms": 0,
+    "driver": "firebird-driver",
+    "case": "narrow1000",
+    "samples_s": [
+      0.006861416011815891,
+      0.005908457998884842,
+      0.006193374982103705
+    ],
+    "errors": []
+  },
+  {
+    "rtt_ms": 0,
+    "driver": "firebird-driver",
+    "case": "narrow100k",
+    "samples_s": [
+      0.5835035419731867,
+      0.5718829999968875,
+      0.6135570830083452
+    ],
+    "errors": []
+  },
+  {
+    "rtt_ms": 0,
+    "driver": "firebird-driver",
+    "case": "wide64",
+    "samples_s": [
+      0.9809232499974314,
+      1.0153164169751108,
+      1.3117025830142666
+    ],
+    "errors": []
+  },
+  {
+    "rtt_ms": 0,
+    "driver": "firebird-driver",
+    "case": "blob_small",
+    "samples_s": [
+      0.04641999999876134,
+      0.04830516700167209,
+      0.05254991599940695
+    ],
+    "errors": []
+  },
+  {
+    "rtt_ms": 0,
+    "driver": "firebird-driver",
+    "case": "blob_medium",
+    "samples_s": [
+      0.16747400001622736,
+      0.15317070798482746,
+      0.194184416992357
+    ],
+    "errors": []
+  },
+  {
+    "rtt_ms": 0,
+    "driver": "firebird-driver",
+    "case": "blob_large",
+    "samples_s": [
+      2.3841780420043506,
+      2.5246985830017366,
+      2.0682689160166774
+    ],
+    "errors": []
+  },
+  {
+    "rtt_ms": 0,
+    "driver": "firebird-driver",
+    "case": "blob_binary",
+    "samples_s": [
+      0.08726333300000988,
+      0.08422674998291768,
+      0.07956924999598414
+    ],
+    "errors": []
+  },
+  {
+    "rtt_ms": 0,
+    "driver": "firebird-driver",
+    "case": "blob_latin1",
+    "samples_s": [
+      0.07248466700548306,
+      0.07335737498942763,
+      0.06091149998246692
+    ],
+    "errors": []
+  },
+  {
+    "rtt_ms": 0,
+    "driver": "firebird-driver",
+    "case": "list_with",
+    "samples_s": [
+      0.011862416984513402,
+      0.010510791995329782,
+      0.010511000000406057
+    ],
+    "errors": []
+  },
+  {
+    "rtt_ms": 0,
+    "driver": "firebird-driver",
+    "case": "cast_tight",
+    "samples_s": [
+      0.031598208006471395,
+      0.029143374995328486,
+      0.036154166009509936
+    ],
+    "errors": []
+  },
+  {
+    "rtt_ms": 0,
+    "driver": "firebird-driver",
+    "case": "cast_8191",
+    "samples_s": [
+      0.0289465410169214,
+      0.015981291013304144,
+      0.02067541700671427
+    ],
+    "errors": []
+  },
+  {
+    "rtt_ms": 0,
+    "driver": "firebird-driver",
+    "case": "concurrent8",
+    "mode": "threads",
+    "samples_s": [
+      0.003255499992519617,
+      0.003357167006470263,
+      0.003528000001097098
+    ]
+  },
+  {
+    "rtt_ms": 0,
+    "driver": "firebird-driver",
+    "case": "concurrent32",
+    "mode": "threads",
+    "samples_s": [
+      0.012314791994867846,
+      0.010260084003675729,
+      0.01919024999369867
+    ]
+  },
+  {
+    "rtt_ms": 0,
+    "driver": "firebird-driver",
+    "case": "concurrent128",
+    "mode": "threads",
+    "samples_s": [
+      0.04514916698099114,
+      0.03626595900277607,
+      0.03645074999076314
+    ]
+  },
+  {
+    "rtt_ms": 5,
+    "driver": "fbfast",
+    "case": "pk",
+    "samples_s": [
+      0.10352983302436769,
+      0.02203145800740458,
+      0.008509042003424838
+    ],
+    "errors": [],
+    "roundtrips": [
+      13,
+      3,
+      1
+    ]
+  },
+  {
+    "rtt_ms": 5,
+    "driver": "fbfast",
+    "case": "narrow1000",
+    "samples_s": [
+      0.025918291008565575,
+      0.017074457980925217,
+      0.016652499994961545
+    ],
+    "errors": [],
+    "roundtrips": [
+      3,
+      2,
+      2
+    ]
+  },
+  {
+    "rtt_ms": 5,
+    "driver": "fbfast",
+    "case": "narrow100k",
+    "samples_s": [
+      2.021823291986948,
+      2.1089932909817435,
+      2.0069770829868503
+    ],
+    "errors": [],
+    "roundtrips": [
+      101,
+      101,
+      101
+    ]
+  },
+  {
+    "rtt_ms": 5,
+    "driver": "fbfast",
+    "case": "wide64",
+    "samples_s": [
+      2.1664670839963946,
+      2.3634975000168197,
+      2.243882541981293
+    ],
+    "errors": [],
+    "roundtrips": [
+      117,
+      117,
+      117
+    ]
+  },
+  {
+    "rtt_ms": 5,
+    "driver": "fbfast",
+    "case": "blob_small",
+    "samples_s": [
+      0.10478712499025278,
+      0.08778216698556207,
+      0.09417379199294373
+    ],
+    "errors": [],
+    "roundtrips": [
+      5,
+      3,
+      3
+    ]
+  },
+  {
+    "rtt_ms": 5,
+    "driver": "fbfast",
+    "case": "blob_medium",
+    "samples_s": [
+      0.39111512500676326,
+      0.5493954159901477,
+      0.22113954200176522
+    ],
+    "errors": [],
+    "roundtrips": [
+      10,
+      11,
+      10
+    ]
+  },
+  {
+    "rtt_ms": 5,
+    "driver": "fbfast",
+    "case": "blob_large",
+    "samples_s": [
+      3.455332207988249,
+      3.396073999989312,
+      3.826261040987447
+    ],
+    "errors": [],
+    "roundtrips": [
+      143,
+      142,
+      142
+    ]
+  },
+  {
+    "rtt_ms": 5,
+    "driver": "fbfast",
+    "case": "blob_binary",
+    "samples_s": [
+      0.14744758300366811,
+      0.11431791601353325,
+      0.1274730839941185
+    ],
+    "errors": [],
+    "roundtrips": [
+      6,
+      5,
+      5
+    ]
+  },
+  {
+    "rtt_ms": 5,
+    "driver": "fbfast",
+    "case": "blob_latin1",
+    "samples_s": [
+      0.10870320899994113,
+      0.16052787500666454,
+      0.16181874999892898
+    ],
+    "errors": [],
+    "roundtrips": [
+      5,
+      4,
+      4
+    ]
+  },
+  {
+    "rtt_ms": 5,
+    "driver": "fbfast",
+    "case": "list_with",
+    "samples_s": [
+      0.016822459001559764,
+      0.040753332985332236,
+      0.03323708300013095
+    ],
+    "errors": [],
+    "roundtrips": [
+      1,
+      2,
+      1
+    ]
+  },
+  {
+    "rtt_ms": 5,
+    "driver": "fbfast",
+    "case": "cast_tight",
+    "samples_s": [
+      0.03138974998728372,
+      0.047002875013276935,
+      0.0716073340154253
+    ],
+    "errors": [],
+    "roundtrips": [
+      3,
+      2,
+      2
+    ]
+  },
+  {
+    "rtt_ms": 5,
+    "driver": "fbfast",
+    "case": "cast_8191",
+    "samples_s": [
+      0.3565462089900393,
+      0.5968426250037737,
+      0.26844945797347464
+    ],
+    "errors": [],
+    "roundtrips": [
+      34,
+      33,
+      33
+    ]
+  },
+  {
+    "rtt_ms": 5,
+    "driver": "fbfast",
+    "case": "concurrent8",
+    "mode": "threads",
+    "samples_s": [
+      0.04535458399914205,
+      0.008365958026843145,
+      0.013444083015201613
+    ]
+  },
+  {
+    "rtt_ms": 5,
+    "driver": "fbfast",
+    "case": "concurrent8",
+    "mode": "gather",
+    "samples_s": [
+      0.015313625015551224,
+      0.015669208980398253,
+      0.01720145798753947
+    ]
+  },
+  {
+    "rtt_ms": 5,
+    "driver": "fbfast",
+    "case": "concurrent8",
+    "mode": "run_all",
+    "samples_s": [
+      0.009445667004911229,
+      0.01198533401475288,
+      0.013588000001618639
+    ]
+  },
+  {
+    "rtt_ms": 5,
+    "driver": "fbfast",
+    "case": "concurrent8",
+    "mode": "run_all_async",
+    "samples_s": [
+      0.01189762499416247,
+      0.01470050000352785,
+      0.010868666984606534
+    ]
+  },
+  {
+    "rtt_ms": 5,
+    "driver": "fbfast",
+    "case": "concurrent32",
+    "mode": "threads",
+    "samples_s": [
+      0.04796620798879303,
+      0.05131520799477585,
+      0.053799084009369835
+    ]
+  },
+  {
+    "rtt_ms": 5,
+    "driver": "fbfast",
+    "case": "concurrent32",
+    "mode": "gather",
+    "samples_s": [
+      0.049090208020061255,
+      0.04331375000765547,
+      0.049922042002435774
+    ]
+  },
+  {
+    "rtt_ms": 5,
+    "driver": "fbfast",
+    "case": "concurrent32",
+    "mode": "run_all",
+    "samples_s": [
+      0.41795029101194814,
+      0.08252362499479204,
+      0.05213895899942145
+    ]
+  },
+  {
+    "rtt_ms": 5,
+    "driver": "fbfast",
+    "case": "concurrent32",
+    "mode": "run_all_async",
+    "samples_s": [
+      0.046753125003306195,
+      0.04769595799734816,
+      0.062598499993328
+    ]
+  },
+  {
+    "rtt_ms": 5,
+    "driver": "fbfast",
+    "case": "concurrent128",
+    "mode": "threads",
+    "samples_s": [
+      0.1978622080059722,
+      0.21427641698392108,
+      0.2159637080039829
+    ]
+  },
+  {
+    "rtt_ms": 5,
+    "driver": "fbfast",
+    "case": "concurrent128",
+    "mode": "gather",
+    "samples_s": [
+      0.20750024999142624,
+      0.1983086250256747,
+      0.19979391698143445
+    ]
+  },
+  {
+    "rtt_ms": 5,
+    "driver": "fbfast",
+    "case": "concurrent128",
+    "mode": "run_all",
+    "samples_s": [
+      0.2022308330051601,
+      0.22965329201542772,
+      0.29358762499759905
+    ]
+  },
+  {
+    "rtt_ms": 5,
+    "driver": "fbfast",
+    "case": "concurrent128",
+    "mode": "run_all_async",
+    "samples_s": [
+      0.19899545799125917,
+      0.22345941700041294,
+      0.19065637499443255
+    ]
+  },
+  {
+    "rtt_ms": 5,
+    "driver": "firebird-driver",
+    "case": "pk",
+    "samples_s": [
+      0.021081917016999796,
+      0.020836834009969607,
+      0.021046707988716662
+    ],
+    "errors": []
+  },
+  {
+    "rtt_ms": 5,
+    "driver": "firebird-driver",
+    "case": "narrow1000",
+    "samples_s": [
+      0.048200457997154444,
+      0.03291108302073553,
+      0.04561870900215581
+    ],
+    "errors": []
+  },
+  {
+    "rtt_ms": 5,
+    "driver": "firebird-driver",
+    "case": "narrow100k",
+    "samples_s": [
+      2.1767539590073284,
+      2.1802243329875637,
+      2.263347249972867
+    ],
+    "errors": []
+  },
+  {
+    "rtt_ms": 5,
+    "driver": "firebird-driver",
+    "case": "wide64",
+    "samples_s": [
+      2.872836249996908,
+      3.258577625005273,
+      2.9986145829898305
+    ],
+    "errors": []
+  },
+  {
+    "rtt_ms": 5,
+    "driver": "firebird-driver",
+    "case": "blob_small",
+    "samples_s": [
+      0.09901737500331365,
+      0.06278304199804552,
+      0.08787979200133123
+    ],
+    "errors": []
+  },
+  {
+    "rtt_ms": 5,
+    "driver": "firebird-driver",
+    "case": "blob_medium",
+    "samples_s": [
+      0.25495395800680853,
+      0.27792849999968894,
+      0.26780658299685456
+    ],
+    "errors": []
+  },
+  {
+    "rtt_ms": 5,
+    "driver": "firebird-driver",
+    "case": "blob_large",
+    "samples_s": [
+      3.4977177499968093,
+      3.448662750015501,
+      3.1266040000191424
+    ],
+    "errors": []
+  },
+  {
+    "rtt_ms": 5,
+    "driver": "firebird-driver",
+    "case": "blob_binary",
+    "samples_s": [
+      0.12411545900977217,
+      0.1260615419887472,
+      0.1242136670043692
+    ],
+    "errors": []
+  },
+  {
+    "rtt_ms": 5,
+    "driver": "firebird-driver",
+    "case": "blob_latin1",
+    "samples_s": [
+      0.12959970900556073,
+      0.11799420797615312,
+      0.11380883300444111
+    ],
+    "errors": []
+  },
+  {
+    "rtt_ms": 5,
+    "driver": "firebird-driver",
+    "case": "list_with",
+    "samples_s": [
+      0.044337332976283506,
+      0.0385521249845624,
+      0.04083962499862537
+    ],
+    "errors": []
+  },
+  {
+    "rtt_ms": 5,
+    "driver": "firebird-driver",
+    "case": "cast_tight",
+    "samples_s": [
+      0.06146437500137836,
+      0.05608733301050961,
+      0.054612207983154804
+    ],
+    "errors": []
+  },
+  {
+    "rtt_ms": 5,
+    "driver": "firebird-driver",
+    "case": "cast_8191",
+    "samples_s": [
+      0.20579708300647326,
+      0.20517516700783744,
+      0.18615845800377429
+    ],
+    "errors": []
+  },
+  {
+    "rtt_ms": 5,
+    "driver": "firebird-driver",
+    "case": "concurrent8",
+    "mode": "threads",
+    "samples_s": [
+      0.02082025000709109,
+      0.0218006249924656,
+      0.019630458002211526
+    ]
+  },
+  {
+    "rtt_ms": 5,
+    "driver": "firebird-driver",
+    "case": "concurrent32",
+    "mode": "threads",
+    "samples_s": [
+      0.07568724997690879,
+      0.0793069580104202,
+      0.07856991598964669
+    ]
+  },
+  {
+    "rtt_ms": 5,
+    "driver": "firebird-driver",
+    "case": "concurrent128",
+    "mode": "threads",
+    "samples_s": [
+      0.3045520420128014,
+      0.30552779100253247,
+      0.32641262499964796
+    ]
+  },
+  {
+    "rtt_ms": 20,
+    "driver": "fbfast",
+    "case": "pk",
+    "samples_s": [
+      0.3183496669807937,
+      0.06991724998806603,
+      0.02288800000678748
+    ],
+    "errors": [],
+    "roundtrips": [
+      13,
+      3,
+      1
+    ]
+  },
+  {
+    "rtt_ms": 20,
+    "driver": "fbfast",
+    "case": "narrow1000",
+    "samples_s": [
+      0.07277762502781115,
+      0.04930958300246857,
+      0.0493181670026388
+    ],
+    "errors": [],
+    "roundtrips": [
+      3,
+      2,
+      2
+    ]
+  },
+  {
+    "rtt_ms": 20,
+    "driver": "fbfast",
+    "case": "narrow100k",
+    "samples_s": [
+      4.412679750006646,
+      4.2323529579734895,
+      4.195926083019003
+    ],
+    "errors": [],
+    "roundtrips": [
+      102,
+      102,
+      101
+    ]
+  },
+  {
+    "rtt_ms": 20,
+    "driver": "fbfast",
+    "case": "wide64",
+    "samples_s": [
+      4.8894873750105035,
+      4.6440739590034354,
+      4.882129832985811
+    ],
+    "errors": [],
+    "roundtrips": [
+      117,
+      117,
+      117
+    ]
+  },
+  {
+    "rtt_ms": 20,
+    "driver": "fbfast",
+    "case": "blob_small",
+    "samples_s": [
+      0.17624770899419673,
+      0.1854363329766784,
+      0.21608012498472817
+    ],
+    "errors": [],
+    "roundtrips": [
+      5,
+      3,
+      3
+    ]
+  },
+  {
+    "rtt_ms": 20,
+    "driver": "fbfast",
+    "case": "blob_medium",
+    "samples_s": [
+      0.5215113750018645,
+      0.4483509589917958,
+      0.4184708329848945
+    ],
+    "errors": [],
+    "roundtrips": [
+      11,
+      10,
+      10
+    ]
+  },
+  {
+    "rtt_ms": 20,
+    "driver": "fbfast",
+    "case": "blob_large",
+    "samples_s": [
+      5.772009000007529,
+      5.739920958993025,
+      5.9409119590127375
+    ],
+    "errors": [],
+    "roundtrips": [
+      143,
+      142,
+      142
+    ]
+  },
+  {
+    "rtt_ms": 20,
+    "driver": "fbfast",
+    "case": "blob_binary",
+    "samples_s": [
+      0.22090008298982866,
+      0.25419629097450525,
+      0.20484083399060182
+    ],
+    "errors": [],
+    "roundtrips": [
+      6,
+      7,
+      5
+    ]
+  },
+  {
+    "rtt_ms": 20,
+    "driver": "fbfast",
+    "case": "blob_latin1",
+    "samples_s": [
+      0.22348804099601693,
+      0.15760274999774992,
+      0.19574841600842774
+    ],
+    "errors": [],
+    "roundtrips": [
+      5,
+      4,
+      4
+    ]
+  },
+  {
+    "rtt_ms": 20,
+    "driver": "fbfast",
+    "case": "list_with",
+    "samples_s": [
+      0.060539749974850565,
+      0.046839125017868355,
+      0.04933291699853726
+    ],
+    "errors": [],
+    "roundtrips": [
+      2,
+      1,
+      1
+    ]
+  },
+  {
+    "rtt_ms": 20,
+    "driver": "fbfast",
+    "case": "cast_tight",
+    "samples_s": [
+      0.1003680000139866,
+      0.0818834160163533,
+      0.10684591697645374
+    ],
+    "errors": [],
+    "roundtrips": [
+      3,
+      2,
+      2
+    ]
+  },
+  {
+    "rtt_ms": 20,
+    "driver": "fbfast",
+    "case": "cast_8191",
+    "samples_s": [
+      0.8359558749943972,
+      0.8420418330060784,
+      1.129137083014939
+    ],
+    "errors": [],
+    "roundtrips": [
+      34,
+      33,
+      33
+    ]
+  },
+  {
+    "rtt_ms": 20,
+    "driver": "fbfast",
+    "case": "concurrent8",
+    "mode": "threads",
+    "samples_s": [
+      0.1358410420070868,
+      0.08785729200462811,
+      0.10089616602635942
+    ]
+  },
+  {
+    "rtt_ms": 20,
+    "driver": "fbfast",
+    "case": "concurrent8",
+    "mode": "gather",
+    "samples_s": [
+      0.06299366700113751,
+      0.04508591699413955,
+      0.052786916989134625
+    ]
+  },
+  {
+    "rtt_ms": 20,
+    "driver": "fbfast",
+    "case": "concurrent8",
+    "mode": "run_all",
+    "samples_s": [
+      0.053670041990699247,
+      0.051091874978737906,
+      0.06351283300318755
+    ]
+  },
+  {
+    "rtt_ms": 20,
+    "driver": "fbfast",
+    "case": "concurrent8",
+    "mode": "run_all_async",
+    "samples_s": [
+      0.052602458017645404,
+      0.04587866700603627,
+      0.04698874999303371
+    ]
+  },
+  {
+    "rtt_ms": 20,
+    "driver": "fbfast",
+    "case": "concurrent32",
+    "mode": "threads",
+    "samples_s": [
+      0.19066083399229683,
+      0.19063079199986532,
+      0.18395541599602439
+    ]
+  },
+  {
+    "rtt_ms": 20,
+    "driver": "fbfast",
+    "case": "concurrent32",
+    "mode": "gather",
+    "samples_s": [
+      0.20571462501538917,
+      0.24148366702138446,
+      0.18992762500420213
+    ]
+  },
+  {
+    "rtt_ms": 20,
+    "driver": "fbfast",
+    "case": "concurrent32",
+    "mode": "run_all",
+    "samples_s": [
+      0.1826952919946052,
+      0.1921387079928536,
+      0.18650345798232593
+    ]
+  },
+  {
+    "rtt_ms": 20,
+    "driver": "fbfast",
+    "case": "concurrent32",
+    "mode": "run_all_async",
+    "samples_s": [
+      0.19819650001591071,
+      0.19536012498429045,
+      0.19093491698731668
+    ]
+  },
+  {
+    "rtt_ms": 20,
+    "driver": "fbfast",
+    "case": "concurrent128",
+    "mode": "threads",
+    "samples_s": [
+      0.7777342910121661,
+      0.9880517090205103,
+      0.8221951670129783
+    ]
+  },
+  {
+    "rtt_ms": 20,
+    "driver": "fbfast",
+    "case": "concurrent128",
+    "mode": "gather",
+    "samples_s": [
+      0.9072569580166601,
+      0.8911895840137731,
+      0.8312513749988284
+    ]
+  },
+  {
+    "rtt_ms": 20,
+    "driver": "fbfast",
+    "case": "concurrent128",
+    "mode": "run_all",
+    "samples_s": [
+      0.8440343749825843,
+      0.9674699169991072,
+      0.8024311670160387
+    ]
+  },
+  {
+    "rtt_ms": 20,
+    "driver": "fbfast",
+    "case": "concurrent128",
+    "mode": "run_all_async",
+    "samples_s": [
+      0.8898397920129355,
+      0.881802708026953,
+      0.9837112500099465
+    ]
+  },
+  {
+    "rtt_ms": 20,
+    "driver": "firebird-driver",
+    "case": "pk",
+    "samples_s": [
+      0.07806775000062771,
+      0.13333558299927972,
+      0.09448679201886989
+    ],
+    "errors": []
+  },
+  {
+    "rtt_ms": 20,
+    "driver": "firebird-driver",
+    "case": "narrow1000",
+    "samples_s": [
+      0.1196816659939941,
+      0.12153725000098348,
+      0.12515054098912515
+    ],
+    "errors": []
+  },
+  {
+    "rtt_ms": 20,
+    "driver": "firebird-driver",
+    "case": "narrow100k",
+    "samples_s": [
+      4.158411416981835,
+      4.456559209007537,
+      4.3922317910182755
+    ],
+    "errors": []
+  },
+  {
+    "rtt_ms": 20,
+    "driver": "firebird-driver",
+    "case": "wide64",
+    "samples_s": [
+      5.535188499983633,
+      5.230728000024101,
+      5.285040582995862
+    ],
+    "errors": []
+  },
+  {
+    "rtt_ms": 20,
+    "driver": "firebird-driver",
+    "case": "blob_small",
+    "samples_s": [
+      0.18148816699977033,
+      0.2151921670010779,
+      0.2188693750067614
+    ],
+    "errors": []
+  },
+  {
+    "rtt_ms": 20,
+    "driver": "firebird-driver",
+    "case": "blob_medium",
+    "samples_s": [
+      0.5025488329993095,
+      0.5109871250169817,
+      0.5859935839835089
+    ],
+    "errors": []
+  },
+  {
+    "rtt_ms": 20,
+    "driver": "firebird-driver",
+    "case": "blob_large",
+    "samples_s": [
+      5.922365290985908,
+      6.602115500019863,
+      5.204015666997293
+    ],
+    "errors": []
+  },
+  {
+    "rtt_ms": 20,
+    "driver": "firebird-driver",
+    "case": "blob_binary",
+    "samples_s": [
+      0.24941245798254386,
+      0.25207820802461356,
+      0.25032170800841413
+    ],
+    "errors": []
+  },
+  {
+    "rtt_ms": 20,
+    "driver": "firebird-driver",
+    "case": "blob_latin1",
+    "samples_s": [
+      0.20470591701450758,
+      0.23051175000728108,
+      0.29397545801475644
+    ],
+    "errors": []
+  },
+  {
+    "rtt_ms": 20,
+    "driver": "firebird-driver",
+    "case": "list_with",
+    "samples_s": [
+      0.11294066600385122,
+      0.09918516600737348,
+      0.08861224999418482
+    ],
+    "errors": []
+  },
+  {
+    "rtt_ms": 20,
+    "driver": "firebird-driver",
+    "case": "cast_tight",
+    "samples_s": [
+      0.13903679201030172,
+      0.16134141699876636,
+      0.1295682080090046
+    ],
+    "errors": []
+  },
+  {
+    "rtt_ms": 20,
+    "driver": "firebird-driver",
+    "case": "cast_8191",
+    "samples_s": [
+      0.98067879100563,
+      1.3125352919742,
+      1.364171791006811
+    ],
+    "errors": []
+  },
+  {
+    "rtt_ms": 20,
+    "driver": "firebird-driver",
+    "case": "concurrent8",
+    "mode": "threads",
+    "samples_s": [
+      0.07258929198724218,
+      0.07472787500591949,
+      0.11415520799346268
+    ]
+  },
+  {
+    "rtt_ms": 20,
+    "driver": "firebird-driver",
+    "case": "concurrent32",
+    "mode": "threads",
+    "samples_s": [
+      0.3252467910060659,
+      0.5746855830075219,
+      0.42685050002182834
+    ]
+  },
+  {
+    "rtt_ms": 20,
+    "driver": "firebird-driver",
+    "case": "concurrent128",
+    "mode": "threads",
+    "samples_s": [
+      1.4719356249843258,
+      1.4658963749825489,
+      1.3587762090028264
+    ]
+  },
+  {
+    "rtt_ms": 50,
+    "driver": "fbfast",
+    "case": "pk",
+    "samples_s": [
+      0.9758976250013802,
+      0.24257899998337962,
+      0.12911549999262206
+    ],
+    "errors": [],
+    "roundtrips": [
+      13,
+      3,
+      1
+    ]
+  },
+  {
+    "rtt_ms": 50,
+    "driver": "fbfast",
+    "case": "narrow1000",
+    "samples_s": [
+      0.26565383400884457,
+      0.11798637500032783,
+      0.13429212500341237
+    ],
+    "errors": [],
+    "roundtrips": [
+      3,
+      2,
+      2
+    ]
+  },
+  {
+    "rtt_ms": 50,
+    "driver": "fbfast",
+    "case": "narrow100k",
+    "samples_s": [
+      8.486336625006516,
+      8.270007500017527,
+      8.163788250007201
+    ],
+    "errors": [],
+    "roundtrips": [
+      101,
+      101,
+      101
+    ]
+  },
+  {
+    "rtt_ms": 50,
+    "driver": "fbfast",
+    "case": "wide64",
+    "samples_s": [
+      9.192213583999546,
+      9.477139291993808,
+      8.916733332996955
+    ],
+    "errors": [],
+    "roundtrips": [
+      117,
+      117,
+      119
+    ]
+  },
+  {
+    "rtt_ms": 50,
+    "driver": "fbfast",
+    "case": "blob_small",
+    "samples_s": [
+      0.4223397500172723,
+      0.21038187498925254,
+      0.2215488330111839
+    ],
+    "errors": [],
+    "roundtrips": [
+      5,
+      3,
+      3
+    ]
+  },
+  {
+    "rtt_ms": 50,
+    "driver": "fbfast",
+    "case": "blob_medium",
+    "samples_s": [
+      1.098856957978569,
+      1.0140199580055196,
+      0.9721295420022216
+    ],
+    "errors": [],
+    "roundtrips": [
+      11,
+      10,
+      10
+    ]
+  },
+  {
+    "rtt_ms": 50,
+    "driver": "fbfast",
+    "case": "blob_large",
+    "samples_s": [
+      10.489287374977721,
+      9.557036333018914,
+      9.320376582996687
+    ],
+    "errors": [],
+    "roundtrips": [
+      143,
+      142,
+      142
+    ]
+  },
+  {
+    "rtt_ms": 50,
+    "driver": "fbfast",
+    "case": "blob_binary",
+    "samples_s": [
+      0.4477756670094095,
+      0.39460933301597834,
+      0.34691495800507255
+    ],
+    "errors": [],
+    "roundtrips": [
+      6,
+      5,
+      5
+    ]
+  },
+  {
+    "rtt_ms": 50,
+    "driver": "fbfast",
+    "case": "blob_latin1",
+    "samples_s": [
+      0.39698658301495016,
+      0.33540320800966583,
+      0.2815953340032138
+    ],
+    "errors": [],
+    "roundtrips": [
+      5,
+      4,
+      4
+    ]
+  },
+  {
+    "rtt_ms": 50,
+    "driver": "fbfast",
+    "case": "list_with",
+    "samples_s": [
+      0.15498004099936225,
+      0.059223834017757326,
+      0.07297508398187347
+    ],
+    "errors": [],
+    "roundtrips": [
+      2,
+      1,
+      1
+    ]
+  },
+  {
+    "rtt_ms": 50,
+    "driver": "fbfast",
+    "case": "cast_tight",
+    "samples_s": [
+      0.19335612500435673,
+      0.13165475000278093,
+      0.15667529200436547
+    ],
+    "errors": [],
+    "roundtrips": [
+      3,
+      2,
+      2
+    ]
+  },
+  {
+    "rtt_ms": 50,
+    "driver": "fbfast",
+    "case": "cast_8191",
+    "samples_s": [
+      1.721294749993831,
+      1.8486402920098044,
+      1.752153042005375
+    ],
+    "errors": [],
+    "roundtrips": [
+      33,
+      35,
+      33
+    ]
+  },
+  {
+    "rtt_ms": 50,
+    "driver": "fbfast",
+    "case": "concurrent8",
+    "mode": "threads",
+    "samples_s": [
+      0.16938220799784176,
+      0.11304708299576305,
+      0.12576666599488817
+    ]
+  },
+  {
+    "rtt_ms": 50,
+    "driver": "fbfast",
+    "case": "concurrent8",
+    "mode": "gather",
+    "samples_s": [
+      0.1131548749981448,
+      0.10585849999915808,
+      0.11258508398896083
+    ]
+  },
+  {
+    "rtt_ms": 50,
+    "driver": "fbfast",
+    "case": "concurrent8",
+    "mode": "run_all",
+    "samples_s": [
+      0.08218620799016207,
+      0.14811795897549018,
+      0.10138750000623986
+    ]
+  },
+  {
+    "rtt_ms": 50,
+    "driver": "fbfast",
+    "case": "concurrent8",
+    "mode": "run_all_async",
+    "samples_s": [
+      0.10596962500130758,
+      0.10209937498439103,
+      0.10688262499752454
+    ]
+  },
+  {
+    "rtt_ms": 50,
+    "driver": "fbfast",
+    "case": "concurrent32",
+    "mode": "threads",
+    "samples_s": [
+      0.43167795799672604,
+      0.4299915420124307,
+      0.4093514170090202
+    ]
+  },
+  {
+    "rtt_ms": 50,
+    "driver": "fbfast",
+    "case": "concurrent32",
+    "mode": "gather",
+    "samples_s": [
+      0.43153633299516514,
+      0.44226570799946785,
+      0.4394623749831226
+    ]
+  },
+  {
+    "rtt_ms": 50,
+    "driver": "fbfast",
+    "case": "concurrent32",
+    "mode": "run_all",
+    "samples_s": [
+      0.4088180839898996,
+      0.6991986669891048,
+      0.44287583298864774
+    ]
+  },
+  {
+    "rtt_ms": 50,
+    "driver": "fbfast",
+    "case": "concurrent32",
+    "mode": "run_all_async",
+    "samples_s": [
+      0.45605287500075065,
+      0.4451044579909649,
+      0.4296973330201581
+    ]
+  },
+  {
+    "rtt_ms": 50,
+    "driver": "fbfast",
+    "case": "concurrent128",
+    "mode": "threads",
+    "samples_s": [
+      1.8535729580034968,
+      2.1336464999767486,
+      2.0090013339940924
+    ]
+  },
+  {
+    "rtt_ms": 50,
+    "driver": "fbfast",
+    "case": "concurrent128",
+    "mode": "gather",
+    "samples_s": [
+      2.2460893339884933,
+      1.959059334010817,
+      2.176200209010858
+    ]
+  },
+  {
+    "rtt_ms": 50,
+    "driver": "fbfast",
+    "case": "concurrent128",
+    "mode": "run_all",
+    "samples_s": [
+      2.15933424999821,
+      2.7144357090000995,
+      2.822641709004529
+    ]
+  },
+  {
+    "rtt_ms": 50,
+    "driver": "fbfast",
+    "case": "concurrent128",
+    "mode": "run_all_async",
+    "samples_s": [
+      2.26495291700121,
+      1.9226982919790316,
+      2.175622333015781
+    ]
+  },
+  {
+    "rtt_ms": 50,
+    "driver": "firebird-driver",
+    "case": "pk",
+    "samples_s": [
+      0.18290566699579358,
+      0.21660604199860245,
+      0.2664232090173755
+    ],
+    "errors": []
+  },
+  {
+    "rtt_ms": 50,
+    "driver": "firebird-driver",
+    "case": "narrow1000",
+    "samples_s": [
+      0.3204619169991929,
+      0.27784741698997095,
+      0.3078652500116732
+    ],
+    "errors": []
+  },
+  {
+    "rtt_ms": 50,
+    "driver": "firebird-driver",
+    "case": "narrow100k",
+    "samples_s": [
+      8.505918999988353,
+      8.490101749979658,
+      8.57579429098405
+    ],
+    "errors": []
+  },
+  {
+    "rtt_ms": 50,
+    "driver": "firebird-driver",
+    "case": "wide64",
+    "samples_s": [
+      10.325142292014789,
+      10.366841749986634,
+      10.32582679198822
+    ],
+    "errors": []
+  },
+  {
+    "rtt_ms": 50,
+    "driver": "firebird-driver",
+    "case": "blob_small",
+    "samples_s": [
+      0.4410517920041457,
+      0.37397725001210347,
+      0.48960120798437856
+    ],
+    "errors": []
+  },
+  {
+    "rtt_ms": 50,
+    "driver": "firebird-driver",
+    "case": "blob_medium",
+    "samples_s": [
+      1.102980875002686,
+      1.077864209015388,
+      1.1297063340025488
+    ],
+    "errors": []
+  },
+  {
+    "rtt_ms": 50,
+    "driver": "firebird-driver",
+    "case": "blob_large",
+    "samples_s": [
+      11.224235500005307,
+      11.518297916976735,
+      11.013698041002499
+    ],
+    "errors": []
+  },
+  {
+    "rtt_ms": 50,
+    "driver": "firebird-driver",
+    "case": "blob_binary",
+    "samples_s": [
+      0.49081716701039113,
+      0.534038874990074,
+      0.5711439999868162
+    ],
+    "errors": []
+  },
+  {
+    "rtt_ms": 50,
+    "driver": "firebird-driver",
+    "case": "blob_latin1",
+    "samples_s": [
+      0.5743131250201259,
+      0.4444979580002837,
+      0.42867104199831374
+    ],
+    "errors": []
+  },
+  {
+    "rtt_ms": 50,
+    "driver": "firebird-driver",
+    "case": "list_with",
+    "samples_s": [
+      0.20775708300061524,
+      0.22584608299075626,
+      0.24471308299689554
+    ],
+    "errors": []
+  },
+  {
+    "rtt_ms": 50,
+    "driver": "firebird-driver",
+    "case": "cast_tight",
+    "samples_s": [
+      0.3198305419937242,
+      0.3521265829913318,
+      0.3485572920180857
+    ],
+    "errors": []
+  },
+  {
+    "rtt_ms": 50,
+    "driver": "firebird-driver",
+    "case": "cast_8191",
+    "samples_s": [
+      2.521984082995914,
+      2.667064500012202,
+      2.427668582997285
+    ],
+    "errors": []
+  },
+  {
+    "rtt_ms": 50,
+    "driver": "firebird-driver",
+    "case": "concurrent8",
+    "mode": "threads",
+    "samples_s": [
+      0.19818741601193324,
+      0.2045899159857072,
+      0.16165454100701027
+    ]
+  },
+  {
+    "rtt_ms": 50,
+    "driver": "firebird-driver",
+    "case": "concurrent32",
+    "mode": "threads",
+    "samples_s": [
+      0.8833123749936931,
+      0.9754517499823123,
+      0.920464708993677
+    ]
+  },
+  {
+    "rtt_ms": 50,
+    "driver": "firebird-driver",
+    "case": "concurrent128",
+    "mode": "threads",
+    "samples_s": [
+      3.219506082998123,
+      3.1186467080260627,
+      3.3758237920119427
+    ]
+  },
+  {
+    "rtt_ms": 20,
+    "rate_kib": 1024,
+    "driver": "fbfast",
+    "case": "narrow100k",
+    "wire_compression": false,
+    "compressed": false,
+    "samples_s": [
+      4.543101249990286,
+      5.267671416018857,
+      5.3555754169938155
+    ],
+    "received_bytes": 9609612
+  },
+  {
+    "rtt_ms": 20,
+    "rate_kib": 1024,
+    "driver": "fbfast",
+    "case": "blob_medium",
+    "wire_compression": false,
+    "compressed": false,
+    "samples_s": [
+      2.5274753329867963,
+      2.613526917004492,
+      2.5591519580048043
+    ],
+    "received_bytes": 6216224
+  },
+  {
+    "rtt_ms": 20,
+    "rate_kib": 1024,
+    "driver": "fbfast",
+    "case": "narrow100k",
+    "wire_compression": true,
+    "compressed": true,
+    "samples_s": [
+      3.1686488339910284,
+      3.092711250006687,
+      4.015804541995749
+    ],
+    "received_bytes": 2070579
+  },
+  {
+    "rtt_ms": 20,
+    "rate_kib": 1024,
+    "driver": "fbfast",
+    "case": "blob_medium",
+    "wire_compression": true,
+    "compressed": true,
+    "samples_s": [
+      0.14518974997918122,
+      0.085164749994874,
+      0.08542650000890717
+    ],
+    "received_bytes": 53139
+  }
+]

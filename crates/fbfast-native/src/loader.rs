@@ -29,6 +29,8 @@ pub struct ClientInfo {
 pub struct Client {
     // Never unload a library while any of its interfaces may be alive.
     _library: Library,
+    // macOS only: re-export of the system zlib under the name the client dlopens.
+    _zlib: Option<Library>,
     info: ClientInfo,
     pub(crate) master: crate::ffi::MasterFn,
     pub(crate) sqlstate: crate::ffi::SqlStateFn,
@@ -74,8 +76,9 @@ impl Client {
     fn open(path: PathBuf) -> Result<Self, NativeError> {
         let error = |e: libloading::Error| NativeError::Library {
             path: path.display().to_string(),
-            reason: e.to_string(),
+            reason: error_chain(&e),
         };
+        let zlib = preload_zlib(&path);
         // SAFETY: explicit canonical path to an SDK-compatible client. The Library
         // is kept for process lifetime by CLIENT; no symbol can outlive it.
         #[cfg(not(windows))]
@@ -156,6 +159,7 @@ impl Client {
         }
         Ok(Self {
             _library: library,
+            _zlib: zlib,
             master: master_fn,
             sqlstate,
             info: ClientInfo {
@@ -172,6 +176,42 @@ impl Client {
     }
 }
 
+/// The macOS client loads zlib (wire compression) with `dlopen("libz.dylib.1")`,
+/// a name no macOS system provides. The packaged runtime ships a library that
+/// only re-exports `/usr/lib/libz.1.dylib` under that install name; loading it
+/// first lets the client's leaf-name lookup find it. Absent shim: no compression.
+#[cfg(target_os = "macos")]
+fn preload_zlib(client: &Path) -> Option<Library> {
+    let shim = client.parent()?.join("libz.dylib.1");
+    if !shim.is_file() {
+        return None;
+    }
+    // SAFETY: re-export-only library built with the runtime; it has no code or
+    // initializers and is kept loaded for the life of the process.
+    unsafe { Library::new(&shim) }.ok()
+}
+
+#[cfg(not(target_os = "macos"))]
+fn preload_zlib(_client: &Path) -> Option<Library> {
+    None
+}
+
+/// libloading 0.9 keeps the operating-system reason (for example the missing
+/// dependency reported by `dlopen`) in `source()`; `Display` alone loses it.
+fn error_chain(error: &dyn std::error::Error) -> String {
+    let mut message = error.to_string();
+    let mut source = error.source();
+    while let Some(cause) = source {
+        let detail = cause.to_string();
+        if !detail.is_empty() && !message.contains(&detail) {
+            message.push_str(": ");
+            message.push_str(&detail);
+        }
+        source = cause.source();
+    }
+    message
+}
+
 fn supported_version(banner: &str) -> bool {
     // C API retains legacy V6.3.<patch> prefix; actual major/minor follows Firebird.
     let Some((build, product)) = banner.split_once(" Firebird ") else {
@@ -183,8 +223,53 @@ fn supported_version(banner: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{supported_version, Client};
+    use super::{error_chain, supported_version, Client};
     use std::{env, path::Path};
+
+    #[test]
+    fn library_errors_keep_the_operating_system_reason() {
+        // A real file that is not a shared library reaches dlopen/LoadLibrary
+        // (canonicalize succeeds) and must report why the loader rejected it.
+        let path = env::temp_dir().join(format!("fbfast-not-a-library-{}", std::process::id()));
+        std::fs::write(&path, b"not a shared library").unwrap();
+        let error = Client::open(path.canonicalize().unwrap()).err().unwrap();
+        std::fs::remove_file(&path).unwrap();
+        let crate::NativeError::Library { reason, .. } = error else {
+            panic!("unexpected error variant: {error:?}");
+        };
+        // Display alone would be just "dlopen failed" / "LoadLibraryExW failed".
+        let (top, detail) = reason.split_once(": ").expect("OS reason appended");
+        assert!(top.ends_with("failed"), "{reason}");
+        assert!(!detail.trim().is_empty(), "{reason}");
+        #[cfg(not(windows))]
+        assert!(detail.contains("fbfast-not-a-library"), "{reason}");
+    }
+
+    #[test]
+    fn error_chain_appends_distinct_sources_once() {
+        #[derive(Debug)]
+        struct Leaf;
+        impl std::fmt::Display for Leaf {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("image not found")
+            }
+        }
+        impl std::error::Error for Leaf {}
+        #[derive(Debug)]
+        struct Top(Leaf);
+        impl std::fmt::Display for Top {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("dlopen failed")
+            }
+        }
+        impl std::error::Error for Top {
+            fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+                Some(&self.0)
+            }
+        }
+        assert_eq!(error_chain(&Top(Leaf)), "dlopen failed: image not found");
+        assert_eq!(error_chain(&Leaf), "image not found");
+    }
 
     #[test]
     fn validates_real_and_legacy_banners() {

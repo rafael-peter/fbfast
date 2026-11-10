@@ -83,10 +83,15 @@ impl Connection {
         let bytes = rows
             .checked_mul(stride)
             .ok_or(NativeError::InvalidInput("Batch size overflow"))?;
-        let mut data = Vec::new();
-        data.try_reserve_exact(bytes / 8)
-            .map_err(|_| NativeError::InvalidInput("Batch allocation failed"))?;
-        data.resize(bytes / 8, 0u64);
+        // Reuse the previous batch's storage; only a larger batch allocates
+        // (and zeroes) the additional part. Every row read is fully written.
+        let mut data = std::mem::take(&mut self.spare_batch);
+        let words = bytes / 8;
+        if data.len() < words {
+            data.try_reserve_exact(words - data.len())
+                .map_err(|_| NativeError::InvalidInput("Batch allocation failed"))?;
+            data.resize(words, 0u64);
+        }
         let mut status = ffi::RawStatus::default();
         let mut eof = 0;
         // SAFETY: buffer fits rows*stride, is 8-byte aligned and exclusively writable.
@@ -108,6 +113,16 @@ impl Connection {
             count: count as usize,
             eof: eof != 0,
         })
+    }
+
+    /// Returns a consumed batch's storage for the next fetch on this attachment.
+    /// Large buffers (over 1 MiB) are released instead of being kept per connection.
+    pub fn recycle(&mut self, batch: RawBatch) {
+        if batch.data.capacity() * 8 <= 1 << 20
+            && batch.data.capacity() > self.spare_batch.capacity()
+        {
+            self.spare_batch = batch.data;
+        }
     }
 
     pub fn close_cursor(&mut self) -> Result<(), NativeError> {

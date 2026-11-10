@@ -23,6 +23,22 @@ pub(super) trait RowSink {
     fn after_fetch(&mut self) -> Result<bool, Error> {
         Ok(true)
     }
+    /// Decoded bytes held for the batch being built (0: no batch structure).
+    fn pending_bytes(&self) -> usize {
+        0
+    }
+}
+
+/// The one batch planner: the requested rows, bounded by `batch_bytes` over
+/// the decoded size of one row. BLOB cells are only IDs in the wire message, so
+/// `pump` additionally splits a batch once its decoded bytes reach the budget.
+pub(super) fn native_batch_rows(
+    plan: &DecodePlan,
+    requested: u32,
+    batch_bytes: u64,
+) -> Result<u32, Error> {
+    let row = plan.row_capacity_bytes()?.max(1) as u64;
+    Ok(requested.min((batch_bytes / row).clamp(1, u32::MAX as u64) as u32))
 }
 
 impl RowSink for Rows {
@@ -61,15 +77,16 @@ impl ExecutionConnection {
             .unwrap_or(0);
         self.native
             .open_cursor(entry.id, &parameters, native_timeout)?;
-        // Consume every BLOB before advancing its row. This also bounds decoded
-        // row streams to one variable-size row per batch, independently of the
-        // small wire message containing only IDs. Client wire buffering remains.
-        let batch_rows = if entry.plan.has_blobs() {
-            1
-        } else {
-            batch_rows
-        };
-        loop {
+        let batch_rows = native_batch_rows(&entry.plan, batch_rows, self.config.batch_bytes)?;
+        // BLOB IDs stay valid for the whole transaction, so several rows can be
+        // fetched before their BLOBs are read. Decoded BLOBs can be large: hand
+        // over a batch as soon as its decoded bytes reach batch_bytes.
+        let split = entry
+            .plan
+            .has_blobs()
+            .then_some(self.config.batch_bytes as usize);
+        let mut first_batch = true;
+        'fetch: loop {
             options.cancellation.check()?;
             check_deadline(deadline)?;
             if !sink.before_fetch()? {
@@ -80,6 +97,9 @@ impl ExecutionConnection {
             let batch = self
                 .native
                 .fetch(batch_rows, self.config.batch_bytes as usize)?;
+            if std::mem::take(&mut first_batch) {
+                self.mark("execute");
+            }
             for index in 0..batch.len() {
                 let row = batch.row(index).ok_or_else(|| {
                     Error::new(
@@ -97,11 +117,22 @@ impl ExecutionConnection {
                 };
                 sink.push(&entry.plan, row, &self.config, &mut native)?;
                 check_deadline(deadline)?;
+                let full = split.is_some_and(|limit| sink.pending_bytes() >= limit);
+                if full
+                    && index + 1 < batch.len()
+                    && !(sink.after_fetch()? && sink.before_fetch()?)
+                {
+                    break 'fetch;
+                }
             }
-            if !sink.after_fetch()? || options.first || batch.eof {
+            let eof = batch.eof;
+            self.drained |= eof;
+            self.native.recycle(batch);
+            if !sink.after_fetch()? || options.first || eof {
                 break;
             }
         }
+        self.mark("fetch");
         Ok(())
     }
 }

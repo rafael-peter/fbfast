@@ -1,0 +1,12 @@
+# mypy.stubtest allowlist for fbfast._native (regular expressions).
+# PyO3 classes are final, disjoint bases at runtime; the stub marks them @final.
+fbfast\._native\.(ArrowBatch|ArrowSchema|FirebirdConfig|_Group|_Pool|_Stream)
+# The extension module defines no __all__; fbfast/__init__.py is the public surface.
+fbfast\._native\.__all__
+# Private helper type returned to fbfast.analytics; not part of any public signature.
+fbfast\._native\._ArrowTable
+# FirebirdConfig resolves every option through __getattr__ (one source: the Rust
+# Config); the stub documents them as properties and __init__ keyword arguments.
+fbfast\._native\.FirebirdConfig\.(?!from_env$)\w+
+# PyO3 constructors are __new__ at runtime; the stubs describe them as __init__.
+fbfast\._native\._Pool\.__(init|new)__

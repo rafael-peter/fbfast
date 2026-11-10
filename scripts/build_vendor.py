@@ -177,10 +177,10 @@ def build_wheel_artifact(client_root: Path, wheel_out: Path) -> Path:
                  ("Linux", "x86_64"), ("Windows", "AMD64")}
     if (platform.system(), platform.machine()) not in supported:
         raise RuntimeError(f"Unsupported wheel target: {platform.system()} {platform.machine()}")
-    if not (3, 11) <= sys.version_info[:2] <= (3, 14) or sysconfig.get_config_var(
+    if not (3, 11) <= sys.version_info[:2] <= (3, 15) or sysconfig.get_config_var(
         "Py_GIL_DISABLED"
     ):
-        raise RuntimeError("Build with CPython 3.11-3.14 with the GIL (first tested target: 3.14)")
+        raise RuntimeError("Build with CPython 3.11-3.15 with the GIL")
     client_root = client_root.expanduser().resolve()
     env = tool_environment(client_root)
     if not (ROOT / "Cargo.lock").is_file():

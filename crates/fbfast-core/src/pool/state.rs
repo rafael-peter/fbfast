@@ -1,5 +1,5 @@
 use super::{Output, Pending};
-use crate::{config::Config, decode::Value, error::Error, execution::control::Cancellation};
+use crate::{config::Config, error::Error, execution::control::Cancellation};
 use serde::Serialize;
 use std::{
     collections::VecDeque,
@@ -9,12 +9,7 @@ use std::{
 };
 
 pub(super) enum Work {
-    Arrow {
-        sql: String,
-        params: Vec<Value>,
-        mode: crate::sinks::arrow::ArrowMode,
-        timeout: Option<f64>,
-    },
+    Query(super::query::Query),
     Snapshot {
         scope: Arc<super::session_scope::Scope>,
         requests: flume::Receiver<Job>,
@@ -22,30 +17,9 @@ pub(super) enum Work {
         timeout: Option<f64>,
     },
     Stream {
-        sql: String,
-        params: Vec<Value>,
+        query: super::query::StreamQuery,
         batch_rows: u32,
-        format: super::stream::StreamFormat,
-        timeout: Option<f64>,
         producer: super::stream_worker::Producer,
-    },
-    Json {
-        sql: String,
-        params: Vec<Value>,
-        json: crate::sinks::json::JsonOptions,
-        timeout: Option<f64>,
-    },
-    Rows {
-        sql: String,
-        params: Vec<Value>,
-        first: bool,
-        unique_names: bool,
-        timeout: Option<f64>,
-    },
-    Explain {
-        sql: String,
-        params: Vec<Value>,
-        timeout: Option<f64>,
     },
     Warmup,
     KeepWarm,
@@ -57,15 +31,26 @@ pub(super) enum Work {
 }
 
 impl Work {
+    /// Diagnostic label; `None` for internal work that is never traced.
+    pub fn kind(&self) -> Option<&'static str> {
+        use super::query::Request;
+        match self {
+            Self::Query(query) => Some(match query.request {
+                Request::Rows { .. } => "rows",
+                Request::Arrow(_) => "arrow",
+                Request::Json(_) => "json",
+                Request::Explain => "explain",
+            }),
+            Self::Stream { .. } => Some("stream"),
+            _ => None,
+        }
+    }
+
     pub fn timeout(&self) -> Option<f64> {
         match self {
-            Self::Rows { timeout, .. }
-            | Self::Arrow { timeout, .. }
-            | Self::Json { timeout, .. }
-            | Self::Snapshot { timeout, .. }
-            | Self::Stream { timeout, .. }
-            | Self::Explain { timeout, .. }
-            | Self::ClearCache { timeout } => *timeout,
+            Self::Query(query) => query.timeout,
+            Self::Stream { query, .. } => query.timeout,
+            Self::Snapshot { timeout, .. } | Self::ClearCache { timeout } => *timeout,
             _ => None,
         }
     }
@@ -79,9 +64,10 @@ pub(super) struct Progress {
 
 pub(super) struct Job {
     pub id: u64,
+    pub submitted: Instant,
     pub work: Work,
     pub progress: Arc<Progress>,
-    pub reply: flume::Sender<Result<Output, Error>>,
+    pub reply: super::group::Reply,
     pub acquire_deadline: Instant,
 }
 
@@ -134,6 +120,17 @@ pub struct Stats {
     pub result_bytes: u64,
     pub closing_pool: bool,
     pub cleanup_errors: u64,
+    pub wire_roundtrips: u64,
+    pub wire_sent_bytes: u64,
+    pub wire_received_bytes: u64,
+    /// Rollback/reset completed after the caller already had its result.
+    pub deferred_cleanups: u64,
+    /// Idle attachments probed off the critical path (`health_check_after`).
+    pub keepalive_pings: u64,
+    /// Attachments replaced after failing before any SQL was sent.
+    pub reconnects: u64,
+    /// Session resets that also started the next query's transaction.
+    pub transaction_restarts: u64,
 }
 
 pub(super) struct State {
@@ -146,6 +143,32 @@ pub(super) struct State {
     pub initialized: bool,
     pub stats: Stats,
     pub close_errors: Vec<Error>,
+    pub traces: VecDeque<crate::execution::QueryTrace>,
+    /// Observed by the most recently opened attachment.
+    pub session: Option<crate::execution::SessionInfo>,
+}
+
+/// Retained detail is bounded; `Stats::cleanup_errors` keeps the full count.
+const CLOSE_ERRORS_KEPT: usize = 32;
+/// Most recent diagnostic records kept until `Pool::diagnostics` drains them.
+const TRACES_KEPT: usize = 1024;
+
+impl State {
+    /// Keeps the latest close/cleanup failures for `wait_closed` without
+    /// growing for the lifetime of a long-running pool.
+    pub fn push_close_error(&mut self, error: Error) {
+        if self.close_errors.len() >= CLOSE_ERRORS_KEPT {
+            self.close_errors.remove(0);
+        }
+        self.close_errors.push(error);
+    }
+
+    pub fn push_trace(&mut self, trace: crate::execution::QueryTrace) {
+        if self.traces.len() >= TRACES_KEPT {
+            self.traces.pop_front();
+        }
+        self.traces.push_back(trace);
+    }
 }
 
 pub(super) struct Inner {
@@ -178,12 +201,23 @@ impl Inner {
                 initialized: false,
                 stats: Stats::default(),
                 close_errors: Vec::new(),
+                traces: VecDeque::new(),
+                session: None,
             }),
             changed: Condvar::new(),
         }
     }
 
     pub fn job(self: &Arc<Self>, state: &mut State, work: Work) -> (Job, Pending) {
+        self.job_signaled(state, work, None)
+    }
+
+    pub fn job_signaled(
+        self: &Arc<Self>,
+        state: &mut State,
+        work: Work,
+        signal: Option<Arc<super::group::Signal>>,
+    ) -> (Job, Pending) {
         state.next_id += 1;
         let progress = match &work {
             Work::Snapshot { scope, .. } => scope.progress.clone(),
@@ -204,9 +238,10 @@ impl Inner {
         (
             Job {
                 id: state.next_id,
+                submitted: Instant::now(),
                 work,
                 progress,
-                reply,
+                reply: super::group::Reply::new(reply, signal),
                 acquire_deadline,
             },
             pending,

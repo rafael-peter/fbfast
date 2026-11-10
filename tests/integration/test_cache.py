@@ -16,18 +16,18 @@ async def until(predicate):
 
 def test_clear_cache_is_lazy_and_rejects_closed_pool(fb, config):
     pool = fb.Pool(config(pool_size=2, min_idle=2))
-    pool.clear_statement_cache_sync()
-    asyncio.run(pool.clear_statement_cache())
+    pool.clear_statement_cache()
+    asyncio.run(pool.clear_statement_cache_async())
     # A ready response does not bypass the delivery deadline.
     with pytest.raises(fb.QueryTimeoutError):
-        pool.clear_statement_cache_sync(timeout=1e-9)
+        pool.clear_statement_cache(timeout=1e-9)
     with pytest.raises(fb.QueryTimeoutError):
-        asyncio.run(pool.clear_statement_cache(timeout=1e-9))
+        asyncio.run(pool.clear_statement_cache_async(timeout=1e-9))
     assert pool.stats()["connections_created"] == 0
     assert pool.stats()["closed"] == 2
-    pool.close_sync()
+    pool.close()
     with pytest.raises(fb.PoolClosedError):
-        pool.clear_statement_cache_sync()
+        pool.clear_statement_cache()
 
 
 def test_sync_and_async_clear_invalidate_every_attachment(fb, config):
@@ -41,12 +41,12 @@ def test_sync_and_async_clear_invalidate_every_attachment(fb, config):
         before = pool.stats()
         asyncio.run(both())
         assert pool.stats()["statement_hits"] == before["statement_hits"] + 2
-        pool.clear_statement_cache_sync()
+        pool.clear_statement_cache()
         before = pool.stats()
         asyncio.run(both())
         assert pool.stats()["statement_misses"] == before["statement_misses"] + 2
         assert pool.stats()["statement_hits"] == before["statement_hits"]
-        asyncio.run(pool.clear_statement_cache())
+        asyncio.run(pool.clear_statement_cache_async())
         before = pool.stats()
         asyncio.run(both())
         assert pool.stats()["statement_misses"] == before["statement_misses"] + 2
@@ -59,10 +59,10 @@ def test_cache_clear_timeout_does_not_interrupt_active_cursor(fb, config):
         async with fb.Pool(config(pool_size=1, max_waiters=1)) as pool:
             active = asyncio.create_task(pool.fetch_val_async(LONG, timeout=None))
             await until(lambda: pool.stats()["leased"] == 1)
-            pending = asyncio.create_task(pool.clear_statement_cache(timeout=0.1))
+            pending = asyncio.create_task(pool.clear_statement_cache_async(timeout=0.1))
             await until(lambda: pool.stats()["waiting"] == 1)
             with pytest.raises(fb.PoolBusyError):
-                await pool.clear_statement_cache()
+                await pool.clear_statement_cache_async()
             with pytest.raises(fb.QueryTimeoutError):
                 await pending
             assert pool.stats()["leased"] == 1
@@ -73,7 +73,7 @@ def test_cache_clear_timeout_does_not_interrupt_active_cursor(fb, config):
             active.cancel()
             with pytest.raises(asyncio.CancelledError):
                 await active
-            await pool.clear_statement_cache()
+            await pool.clear_statement_cache_async()
             assert await pool.fetch_val_async("SELECT 8 FROM RDB$DATABASE") == 8
             assert pool.stats()["waiting"] == 0
     asyncio.run(run())
@@ -85,7 +85,7 @@ def test_coalesced_clear_and_cancel_preserve_active_query_and_attachment(fb, con
             connection = await pool.fetch_val_async("SELECT CURRENT_CONNECTION FROM RDB$DATABASE")
             active = asyncio.create_task(pool.fetch_one_async(MEDIUM))
             await until(lambda: pool.stats()["leased"] == 1)
-            clears = [asyncio.create_task(pool.clear_statement_cache()) for _ in range(8)]
+            clears = [asyncio.create_task(pool.clear_statement_cache_async()) for _ in range(8)]
             await until(lambda: pool.stats()["waiting"] == 8)
             clears[0].cancel()
             with pytest.raises(asyncio.CancelledError):

@@ -39,12 +39,12 @@ def test_lazy_pool_exact_scalars_and_binding(fb, config):
         assert pool.stats()["statement_hits"] > 0
     assert rows[0][4] == 2**127-1
     assert pool.stats()["closed"] == 2
-    pool.close_sync()
+    pool.close()
     with pytest.raises(fb.PoolClosedError):
         pool.fetch_val("SELECT 1 FROM RDB$DATABASE")
 
 
-def test_errors_cleanup_limits_and_names(fb, config):
+def test_errors_cleanup_limits_and_names(fb, config, settled):
     # Keep the cleanup assertion exact: a larger pool may replenish min_idle
     # while this connection is leased and legitimately finish with two idle slots.
     with fb.Pool(config(pool_size=1, max_result_rows=1)) as pool:
@@ -69,21 +69,21 @@ def test_errors_cleanup_limits_and_names(fb, config):
         with pytest.raises(fb.DataConversionError):
             pool.fetch_val("SELECT CAST(? AS TIMESTAMP) FROM RDB$DATABASE", [datetime.now(timezone.utc)])
         assert pool.fetch_val("SELECT ID FROM FBFAST_TYPES WHERE ID=2") == 2
-        assert pool.stats()["idle"] == 1
+        assert settled(pool)["idle"] == 1
     wrong_role = fb.Pool(config(role="NOT_GRANTED", min_idle=2))
     with pytest.raises(fb.RoleNotActiveError):
-        wrong_role.warmup_sync()
+        wrong_role.warmup()
     assert wrong_role.stats()["closed"] == 2
 
 
-def test_materialized_row_byte_limit_cleans_up_and_keeps_pool_reusable(fb, config):
+def test_materialized_row_byte_limit_cleans_up_and_keeps_pool_reusable(fb, config, settled):
     with fb.Pool(config(pool_size=1, max_result_bytes=1)) as pool:
         with pytest.raises(fb.ResultLimitError, match="max_result_bytes") as failure:
             pool.fetch_all("SELECT ID FROM FBFAST_TYPES")
         assert "limit=1" in str(failure.value)
         assert pool.fetch_all("SELECT ID FROM FBFAST_TYPES WHERE 1=0") == []
         assert 'Table "FBFAST_TYPES"' in pool.explain("SELECT ID FROM FBFAST_TYPES")
-        assert pool.stats()["idle"] == 1
+        assert settled(pool)["idle"] == 1
 
 
 def test_concurrent_queries_respect_attachment_ceiling(fb, config):
@@ -111,7 +111,7 @@ def test_pool_fork_guard_precedes_inherited_mutexes(fb, config):
         child = os.fork()
         if child == 0:
             try:
-                for operation in (pool.stats, pool.close_sync,
+                for operation in (pool.stats, pool.close,
                                   lambda: pool.fetch_val("SELECT 1 FROM RDB$DATABASE"),
                                   lambda: pool._core.value_async("SELECT 1 FROM RDB$DATABASE")):
                     try:

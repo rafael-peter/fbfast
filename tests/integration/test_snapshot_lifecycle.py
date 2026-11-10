@@ -55,7 +55,7 @@ def test_snapshot_remains_exclusive_through_python_conversion(fb, config, monkey
 
     async def run():
         async with fb.Pool(config(pool_size=1, min_idle=0)) as pool:
-            scope = pool.snapshot_async(timeout=None)
+            scope = pool.snapshot(timeout=None)
             session = await scope.__aenter__()
             monkeypatch.setattr(decimal, "Decimal", SlowDecimal)
             active = asyncio.create_task(session.fetch_all_async(DECIMALS, timeout=None))
@@ -66,7 +66,7 @@ def test_snapshot_remains_exclusive_through_python_conversion(fb, config, monkey
             with pytest.raises(asyncio.CancelledError):
                 await active
             with pytest.raises(fb.FbFastError):
-                await scope.close()
+                await scope.aclose()
             assert pool.stats()["native_cancels"] == 0
             assert await pool.fetch_val_async("SELECT 3 FROM RDB$DATABASE") == 3
     asyncio.run(run())
@@ -82,7 +82,7 @@ def test_snapshot_deadline_includes_conversion_and_query_cannot_extend_scope(fb,
         async with fb.Pool(config(pool_size=1, min_idle=0)) as pool:
             monkeypatch.setattr(decimal, "Decimal", SlowDecimal)
             with pytest.raises(fb.QueryTimeoutError):
-                async with pool.snapshot_async(timeout=0.05) as session:
+                async with pool.snapshot(timeout=0.05) as session:
                     await session.fetch_val_async("SELECT AMOUNT FROM FBFAST_TYPES WHERE ID=1", timeout=None)
             assert await pool.fetch_val_async("SELECT 1 FROM RDB$DATABASE") == 1
     asyncio.run(run())
@@ -93,7 +93,7 @@ def test_snapshot_open_cancel_in_queue_does_not_cancel_other_lease(fb, config):
         async with fb.Pool(config(pool_size=1, min_idle=0)) as pool:
             active = asyncio.create_task(pool.fetch_val_async(LONG, timeout=None))
             await until(lambda: pool.stats()["leased"] == 1)
-            scope = pool.snapshot_async()
+            scope = pool.snapshot()
             opening = asyncio.create_task(scope.__aenter__())
             await until(lambda: pool.stats()["waiting"] == 1)
             opening.cancel()
@@ -127,7 +127,7 @@ def test_snapshot_open_preserves_connection_error(fb, config):
     with pytest.raises(fb.RoleNotActiveError):
         with pool.snapshot():
             pass
-    pool.close_sync()
+    pool.close()
 
 
 @pytest.mark.parametrize("scope_timeout,query_timeout", [(0.05, None), (None, 0.05)])
@@ -143,9 +143,9 @@ def test_snapshot_native_deadline_counts_once_and_releases_capacity(fb, config, 
 def test_cache_invalidation_waits_for_snapshot_lease_to_end(fb, config):
     async def run():
         async with fb.Pool(config(pool_size=1, min_idle=0)) as pool:
-            async with pool.snapshot_async(timeout=None) as session:
+            async with pool.snapshot(timeout=None) as session:
                 assert await session.fetch_val_async("SELECT 1 FROM RDB$DATABASE") == 1
-                pending = asyncio.create_task(pool.clear_statement_cache(timeout=None))
+                pending = asyncio.create_task(pool.clear_statement_cache_async(timeout=None))
                 await until(lambda: pool.stats()["waiting"] == 1)
                 assert not pending.done()
                 assert await session.fetch_val_async("SELECT 2 FROM RDB$DATABASE") == 2
@@ -157,7 +157,7 @@ def test_cache_invalidation_waits_for_snapshot_lease_to_end(fb, config):
 def test_queued_pool_query_resumes_after_snapshot_and_child_generations(fb, config):
     async def run():
         async with fb.Pool(config(pool_size=1, min_idle=0)) as pool:
-            async with pool.snapshot_async(timeout=None) as session:
+            async with pool.snapshot(timeout=None) as session:
                 assert await session.fetch_val_async("SELECT 1 FROM RDB$DATABASE") == 1
                 queued = asyncio.create_task(pool.fetch_val_async("SELECT 8 FROM RDB$DATABASE"))
                 await until(lambda: pool.stats()["waiting"] == 1)

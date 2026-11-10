@@ -1,0 +1,17 @@
+{
+  "build_id": "a003b71a08cf40af727f7587992176d73a8e907f117b7b7bfef368de4b47dd86",
+  "version": "0.3.0",
+  "command": [
+    "benchmarks/run_latency.py",
+    "--samples",
+    "3",
+    "--label",
+    "latency-0.3.0-final"
+  ],
+  "python": "3.14.5 (main, May 10 2026, 19:20:57) [Clang 22.1.3 ]",
+  "platform": "macOS-27.2-arm64-arm-64bit-Mach-O",
+  "toxiproxy": "ghcr.io/shopify/toxiproxy@sha256:5d3dae09bc185dcc5ff6cf43abf6062a4a720aff0c4306a471e773acdcd107aa",
+  "firebird_driver": "2.0.3",
+  "samples": 3,
+  "note": "RTT is added by toxiproxy (half per direction) on top of the local Docker path."
+}

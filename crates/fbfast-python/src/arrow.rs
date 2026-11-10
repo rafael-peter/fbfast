@@ -1,15 +1,9 @@
 //! Ownership transfer through standard Arrow PyCapsules, with no Python rows.
-use crate::{
-    errors::from_core,
-    pool::PyPool,
-    pool_wait::{internal, wait},
-    values::Converter,
-};
+use crate::{errors::from_core, pool::PyPool};
 use arrow_array::{ffi_stream::FFI_ArrowArrayStream, RecordBatchIterator};
 use arrow_schema::DataType;
 use fbfast_core::{
     error::Error,
-    pool::Output,
     sinks::arrow::{ArrowMode, ArrowOutput},
 };
 use pyo3::{exceptions::PyNotImplementedError, prelude::*, types::PyCapsule};
@@ -132,25 +126,14 @@ pub fn query<'py>(
         )
         .map(Bound::unbind);
     }
-    pool.inner.stats().map_err(from_core)?;
-    let mut converter = Converter::new(py)?;
-    let params = converter.params(params)?;
-    let mut pending = pool
-        .inner
-        .submit_arrow(sql, params, mode, timeout)
-        .map_err(from_core)?;
-    let output = wait(py, &mut pending)?;
-    converter.set_budget(pending.delivery_budget().map_err(from_core)?);
-    converter.checkpoint()?;
-    let result = match &output {
-        Output::Arrow(output) => convert(py, output, mode),
-        _ => Err(internal()),
-    };
-    py.detach(|| drop(output));
-    let result = result?;
-    converter.checkpoint()?;
-    pending.delivery_complete();
-    Ok(result)
+    crate::delivery::run(
+        py,
+        &pool.inner,
+        sql,
+        params,
+        timeout,
+        crate::delivery::Form::Arrow(mode),
+    )
 }
 
 pub fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {

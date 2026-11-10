@@ -16,8 +16,13 @@ struct Operation {
     deadline: Option<Instant>,
     progress: Arc<Progress>,
     errors: Arc<Mutex<Vec<Error>>>,
-    sent: bool,
+    /// When the last cancel was sent. A cancel that reaches the server before
+    /// the statement starts executing is a no-op, so it is repeated.
+    sent: Option<Instant>,
 }
+
+/// Interval between repeated cancels of an operation that is still running.
+const RAISE_AGAIN: std::time::Duration = std::time::Duration::from_millis(200);
 
 #[derive(Default)]
 struct State {
@@ -69,7 +74,7 @@ impl Controller {
             deadline,
             progress,
             errors: Arc::default(),
-            sent: false,
+            sent: None,
         };
         let weak = Arc::downgrade(&self.mailbox);
         operation
@@ -223,8 +228,9 @@ fn control_loop(mailbox: Arc<Mailbox>, inner: Weak<Inner>) {
                 break None;
             }
             if let Some(op) = state.operation.as_mut() {
-                if !op.sent {
-                    if op.deadline.is_some_and(|end| Instant::now() >= end)
+                if op.sent.is_none_or(|at| at.elapsed() >= RAISE_AGAIN) {
+                    if op.sent.is_none()
+                        && op.deadline.is_some_and(|end| Instant::now() >= end)
                         && op.progress.cancellation.expire_on_controller()
                     {
                         if let Some(inner) = inner.upgrade() {
@@ -237,18 +243,19 @@ fn control_loop(mailbox: Arc<Mailbox>, inner: Weak<Inner>) {
                         }
                     }
                     if op.progress.cancellation.check().is_err() {
-                        op.sent = true;
+                        let first = op.sent.is_none();
+                        op.sent = Some(Instant::now());
                         let operation = op.clone();
                         state.in_flight = Some(operation.generation);
-                        break Some(operation);
+                        break Some((operation, first));
                     }
                 }
             }
-            let until = state
-                .operation
-                .as_ref()
-                .filter(|op| !op.sent)
-                .and_then(|op| op.deadline);
+            // Wake for the deadline, or to repeat a cancel the server may have missed.
+            let until = state.operation.as_ref().and_then(|op| match op.sent {
+                Some(at) => Some(at + RAISE_AGAIN),
+                None => op.deadline,
+            });
             state = if let Some(end) = until {
                 mailbox
                     .changed
@@ -263,11 +270,13 @@ fn control_loop(mailbox: Arc<Mailbox>, inner: Weak<Inner>) {
             };
         };
         drop(state);
-        let Some(operation) = operation else { break };
+        let Some((operation, first)) = operation else {
+            break;
+        };
         let result = operation.handle.request(operation.generation);
         if let Some(inner) = inner.upgrade() {
             let mut state = inner.state.lock().unwrap_or_else(|e| e.into_inner());
-            if matches!(result, Ok(true)) {
+            if first && matches!(result, Ok(true)) {
                 state.stats.native_cancels += 1;
             }
         }

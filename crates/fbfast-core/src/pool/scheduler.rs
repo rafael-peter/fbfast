@@ -10,7 +10,15 @@ use std::{
 
 impl Inner {
     pub fn submit(self: &Arc<Self>, work: Work) -> Result<Pending, Error> {
-        self.submit_many(vec![work])
+        self.submit_signaled(work, None)
+    }
+
+    pub fn submit_signaled(
+        self: &Arc<Self>,
+        work: Work,
+        signal: Option<Arc<super::group::Signal>>,
+    ) -> Result<Pending, Error> {
+        self.submit_many(vec![work], signal)
             .map(|mut requests| requests.remove(0))
     }
 
@@ -19,10 +27,15 @@ impl Inner {
             (0..self.config.min_idle.max(1))
                 .map(|_| Work::Warmup)
                 .collect(),
+            None,
         )
     }
 
-    fn submit_many(self: &Arc<Self>, work: Vec<Work>) -> Result<Vec<Pending>, Error> {
+    fn submit_many(
+        self: &Arc<Self>,
+        work: Vec<Work>,
+        signal: Option<Arc<super::group::Signal>>,
+    ) -> Result<Vec<Pending>, Error> {
         let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         if state.closing {
             return Err(closed());
@@ -51,7 +64,7 @@ impl Inner {
         let mut requests = Vec::with_capacity(work.len());
         state.initialized = true;
         for work in work {
-            let (job, pending) = self.job(&mut state, work);
+            let (job, pending) = self.job_signaled(&mut state, work, signal.clone());
             state.queue.push_back(job);
             requests.push(pending);
         }

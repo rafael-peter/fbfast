@@ -1,5 +1,39 @@
 # Development and build storage
 
+Instructions for agents and the repository rules are summarized in
+[AGENTS.md](../AGENTS.md).
+
+## Building from source
+
+Source builds require Rust 1.99.1 (pinned in `rust-toolchain.toml`), a C++17
+toolchain, CPython 3.11–3.15 with the GIL, and a Firebird 5.0.x SDK/runtime
+(5.0.3 or newer). Published wheels bundle the pinned Firebird 5.0.3 client and
+are tested against servers 5.0.3 and 5.0.4. The build does not download the
+client implicitly: point `--client-root` (or `FBFAST_CLIENT_ROOT`) at an SDK, or
+fetch the pinned one with `scripts/download_sdk.py`. Install development
+dependencies from `requirements-dev.txt`.
+
+```sh
+python3.14 scripts/build_vendor.py --release --out dist/vendor \
+  --client-root /Library/Frameworks/Firebird.framework
+python3.14 scripts/verify_vendor.py --package dist/vendor/fbfast
+```
+
+Use the appropriate SDK path for your platform. The build writes wheels to
+`dist/wheels/` and a complete copyable package to `dist/vendor/fbfast/`.
+Install the wheel with uv/pip, or copy the entire vendor package to an importable
+location. Do not mix files from different builds. Stop consumers before updating
+loaded native libraries, and remove an old vendored copy when switching to pip.
+
+```python
+import fbfast
+
+print(fbfast.build_info())   # Build/ABI metadata; no database connection
+print(fbfast.client_info())  # Loads the client; no database connection
+```
+
+For release automation, see [releasing](releasing.md).
+
 ## What belongs in Git?
 
 Commit source, tests, documentation, `Cargo.lock`, build scripts, and license
@@ -35,15 +69,15 @@ cargo clean           # Remove all target artifacts; the next build is slower
 
 Delete only the specific obsolete `dist/` subdirectories you have inspected.
 Do not use `git clean -xfd`: it also removes ignored environments, credentials,
-SDKs, and local evidence. Recreate the current package with the README build
-command; do not edit a generated vendor copy as your source of truth.
+SDKs, and local evidence. Recreate the current package with the build
+command above; do not edit a generated vendor copy as your source of truth.
 
 ## Checks
 
 After installing `requirements-dev.txt` and building the package:
 
 ```sh
-python -m ruff check python scripts tests
+python -m ruff check python scripts tests benchmarks examples
 python -m mypy python/fbfast
 python scripts/check_structure.py
 python scripts/verify_vendor.py --package dist/vendor/fbfast
@@ -62,11 +96,24 @@ ERP database:
 ```sh
 python scripts/firebird_fixture.py start
 python scripts/test_python.py
+python scripts/run_examples.py
 ```
 
 The integration runner verifies the fixture identity and sets its connection
 variables. It tests the built `dist/vendor` package, so rebuild after source
-changes. Rust integration/native checks have separate harnesses under `scripts/`.
+changes. `scripts/run_examples.py` runs every script in `examples/` against the
+same fixture with `FB_*` variables. Rust integration/native checks have separate
+harnesses under `scripts/`.
+
+Generated documentation must match its sources:
+
+```sh
+python scripts/gen_config_docs.py --check   # docs/guide/configuration.md from the stub
+python scripts/gen_api_docs.py --check      # docs/guide/api.md from the built package
+python scripts/gen_llms_full.py --check     # llms-full.txt from llms.txt and docs/guide
+```
+
+Run them without `--check` to regenerate.
 
 Alternatively, `tests/models/test_sdk_models.py` can use the private extracted
 SDK server without Docker:

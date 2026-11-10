@@ -1,15 +1,13 @@
 //! One reserved worker per snapshot. There is no independent session worker pool.
 use super::{
     fork_error,
+    pending::Completion,
     session_scope::{self, Scope},
     state::{Job, Work},
     stream_worker::{Demand, Producer},
-    Output, Pending, Pool, Stats, Stream,
+    Output, Pending, Pool, Query, Stats, Stream, StreamQuery,
 };
-use crate::{
-    decode::Value,
-    error::{Error, ErrorKind},
-};
+use crate::error::{Error, ErrorKind};
 use std::{
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -18,10 +16,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-struct Completion {
-    pending: Pending,
-    result: Option<Result<(), Error>>,
-}
 struct Handle {
     pool: Pool,
     scope: Arc<Scope>,
@@ -62,10 +56,7 @@ impl Pool {
                 requests: sender,
                 opened: receiver,
                 entered: AtomicBool::new(false),
-                completion: Mutex::new(Completion {
-                    pending,
-                    result: None,
-                }),
+                completion: Mutex::new(Completion::new(pending)),
             })),
             pid: std::process::id(),
         })
@@ -73,22 +64,6 @@ impl Pool {
 }
 
 impl Session {
-    pub fn submit_arrow(
-        &self,
-        sql: String,
-        params: Vec<Value>,
-        mode: crate::sinks::arrow::ArrowMode,
-        timeout: Option<f64>,
-    ) -> Result<Pending, Error> {
-        crate::statements::validate_read_query(&sql)?;
-        crate::execution::control::deadline(timeout)?;
-        self.submit(Work::Arrow {
-            sql,
-            params,
-            mode,
-            timeout,
-        })
-    }
     fn handle(&self) -> Result<&Arc<Handle>, Error> {
         if self.pid != std::process::id() {
             return Err(fork_error());
@@ -113,7 +88,14 @@ impl Session {
     pub fn stats(&self) -> Result<Stats, Error> {
         self.handle()?.pool.stats()
     }
-    fn submit(&self, work: Work) -> Result<Pending, Error> {
+    fn enqueue(&self, work: Work) -> Result<Pending, Error> {
+        self.enqueue_signaled(work, None)
+    }
+    fn enqueue_signaled(
+        &self,
+        work: Work,
+        signal: Option<Arc<super::Signal>>,
+    ) -> Result<Pending, Error> {
         let h = self.handle()?;
         let inner = h.pool.inner()?;
         let mut state = inner.state.lock().unwrap_or_else(|e| e.into_inner());
@@ -123,7 +105,7 @@ impl Session {
         if state.next_id == u64::MAX {
             return Err(session_scope::closed());
         }
-        let (job, mut pending) = inner.job(&mut state, work);
+        let (job, mut pending) = inner.job_signaled(&mut state, work, signal);
         drop(state);
         pending.scope = match h.scope.reserve(job.progress.clone()) {
             Ok(permit) => Some(permit),
@@ -137,137 +119,33 @@ impl Session {
         }
         Ok(pending)
     }
-    pub fn submit_rows(
-        &self,
-        sql: String,
-        params: Vec<Value>,
-        first: bool,
-        unique_names: bool,
-        timeout: Option<f64>,
-    ) -> Result<Pending, Error> {
+    /// Queues one query on the snapshot's reserved connection.
+    pub fn submit(&self, query: Query) -> Result<Pending, Error> {
         self.handle()?;
-        crate::statements::validate_read_query(&sql)?;
-        crate::execution::control::deadline(timeout)?;
-        self.submit(Work::Rows {
-            sql,
-            params,
-            first,
-            unique_names,
-            timeout,
-        })
+        query.validate()?;
+        self.enqueue(Work::Query(query))
     }
-    pub fn submit_explain(
-        &self,
-        sql: String,
-        params: Vec<Value>,
-        timeout: Option<f64>,
-    ) -> Result<Pending, Error> {
-        self.handle()?;
-        crate::statements::validate_read_query(&sql)?;
-        crate::execution::control::deadline(timeout)?;
-        self.submit(Work::Explain {
-            sql,
-            params,
-            timeout,
-        })
-    }
-    pub fn submit_json(
-        &self,
-        sql: String,
-        params: Vec<Value>,
-        json: crate::sinks::json::JsonOptions,
-        timeout: Option<f64>,
-    ) -> Result<Pending, Error> {
-        self.handle()?;
-        crate::statements::validate_read_query(&sql)?;
-        crate::execution::control::deadline(timeout)?;
-        self.submit(Work::Json {
-            sql,
-            params,
-            json,
-            timeout,
-        })
-    }
-    pub fn stream(
-        &self,
-        sql: String,
-        params: Vec<Value>,
-        batch_rows: Option<u32>,
-        unique_names: bool,
-        timeout: Option<f64>,
-    ) -> Result<Stream, Error> {
-        self.stream_output(
-            sql,
-            params,
-            batch_rows,
-            timeout,
-            super::stream::StreamFormat::Rows(unique_names),
-        )
-    }
-    pub fn stream_json(
-        &self,
-        sql: String,
-        params: Vec<Value>,
-        batch_rows: Option<u32>,
-        json: (
-            crate::sinks::json::JsonOptions,
-            crate::sinks::json::JsonFormat,
-        ),
-        timeout: Option<f64>,
-    ) -> Result<Stream, Error> {
-        self.stream_output(
-            sql,
-            params,
-            batch_rows,
-            timeout,
-            super::stream::StreamFormat::Json(json),
-        )
-    }
-    pub fn stream_arrow(
-        &self,
-        sql: String,
-        params: Vec<Value>,
-        batch_rows: Option<u32>,
-        timeout: Option<f64>,
-    ) -> Result<Stream, Error> {
-        self.stream_output(
-            sql,
-            params,
-            batch_rows,
-            timeout,
-            super::stream::StreamFormat::Arrow,
-        )
-    }
-    fn stream_output(
-        &self,
-        sql: String,
-        params: Vec<Value>,
-        batch_rows: Option<u32>,
-        timeout: Option<f64>,
-        format: super::stream::StreamFormat,
-    ) -> Result<Stream, Error> {
+
+    pub fn open_stream(&self, query: StreamQuery) -> Result<Stream, Error> {
         let h = self.handle()?;
-        crate::statements::validate_read_query(&sql)?;
-        crate::execution::control::deadline(timeout)?;
         let config = &h.pool.inner()?.config;
-        let batch_rows = batch_rows.unwrap_or(config.fetch_size);
-        if batch_rows == 0 {
-            return Err(Error::config("batch_rows", "must be positive"));
-        }
+        let batch_rows = query.validate(config.fetch_size)?;
         let (sender, receiver) = flume::bounded(config.prefetch_batches as usize + 1);
         let demand = Arc::new(Demand::default());
-        let pending = self.submit(Work::Stream {
-            sql,
-            params,
-            batch_rows,
-            format,
-            timeout,
-            producer: Producer {
-                sender,
-                demand: demand.clone(),
+        let signal = Arc::new(super::Signal::default());
+        let pending = self.enqueue_signaled(
+            Work::Stream {
+                query,
+                batch_rows,
+                producer: Producer {
+                    sender,
+                    demand: demand.clone(),
+                    signal: signal.clone(),
+                },
             },
-        })?;
-        Ok(Stream::new(pending, receiver, demand))
+            Some(signal.clone()),
+        )?;
+        Ok(Stream::new(pending, receiver, demand, signal))
     }
     pub fn begin_close(&self) -> Result<(), Error> {
         self.handle()?.scope.request_close();
@@ -280,23 +158,15 @@ impl Session {
             .checked_add(timeout)
             .ok_or_else(|| Error::config("close_timeout", "duration overflow"))?;
         loop {
-            let mut completion = h.completion.lock().unwrap_or_else(|e| e.into_inner());
-            if completion.result.is_none() {
-                completion.result = match completion.pending.try_result() {
-                    Ok(None) => None,
-                    Ok(Some(Output::Ready)) => Some(Ok(())),
-                    Ok(Some(_)) => Some(Err(Error::new(
-                        ErrorKind::Query,
-                        "snapshot",
-                        "Unexpected session completion",
-                    ))),
-                    Err(error) => Some(Err(error)),
-                };
+            let remaining = end.saturating_duration_since(Instant::now());
+            let outcome = h
+                .completion
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .wait(remaining.min(Duration::from_millis(50)), "snapshot");
+            if let Some(result) = outcome {
+                return result;
             }
-            if let Some(result) = &completion.result {
-                return result.clone();
-            }
-            drop(completion);
             if Instant::now() >= end {
                 return Err(Error::new(
                     ErrorKind::PoolTimeout,
@@ -304,10 +174,6 @@ impl Session {
                     "Snapshot cleanup pending; native slot remains counted",
                 ));
             }
-            std::thread::sleep(
-                end.saturating_duration_since(Instant::now())
-                    .min(Duration::from_millis(5)),
-            );
         }
     }
 }

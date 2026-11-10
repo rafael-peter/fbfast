@@ -52,7 +52,7 @@ def test_json_stream_timeout_does_not_complete_partial_document(fb, config, form
 def test_json_snapshot_stream_exclusivity_and_consumer_error_cleanup(fb, config):
     async def run():
         async with fb.Pool(config(pool_size=1)) as pool:
-            async with pool.snapshot_async() as session:
+            async with pool.snapshot() as session:
                 async with session.stream_json_async(MILLION, batch_rows=1) as chunks:
                     assert json.loads(await anext(chunks)) == {"A": 1, "B": 1}
                     with pytest.raises(fb.PoolBusyError):

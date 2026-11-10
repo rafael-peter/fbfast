@@ -67,6 +67,17 @@ patch the server in any case. Where a server upgrade is not yet possible,
 restrict network access, use a minimal role, remove unused routine and generator
 privileges, and follow Firebird security releases.
 
+The client decision was reviewed again for 0.3.0 (2026-11-06) against the nine
+advisories published with Firebird 5.0.4 on 2026-04-17 (CVE-2026-35215,
+CVE-2026-34232, CVE-2026-33337, CVE-2026-40342, CVE-2026-28224, CVE-2026-28214,
+CVE-2026-28212, GHSA-6crx-4g37-7j49 and CVE-2025-65104). All of them describe a
+client, usually unauthenticated, crashing or abusing a **server**; the last one
+affects only Firebird 3 clients. The XDR routines involved are shared with the
+client, so a malicious server could in theory reach the slice parsers, but
+fbfast never requests ARRAY slices and treats the server as trusted. None of
+them is a reason to ship the 5.0.4 client, so 0.3.0 keeps 5.0.3. Upgrade the
+**server** to 5.0.4 or later to close these issues.
+
 Wire encryption defaults to `required`. `enabled` permits negotiation to an
 unencrypted connection, while `disabled` explicitly turns encryption off.
 Keep `required` unless the deployment has a reviewed transport boundary.

@@ -1,102 +1,80 @@
+//! Native errors become instances of the Python hierarchy in `fbfast._errors`.
+//! Classes are defined in Python so they can also derive from built-in
+//! exceptions such as `TimeoutError` and `ConnectionError`.
 use fbfast_core::error::{Error, ErrorKind};
-use pyo3::{create_exception, exceptions::PyException, prelude::*};
+use pyo3::{exceptions::PyRuntimeError, prelude::*, sync::PyOnceLock, types::PyDict};
 
-create_exception!(fbfast, FbFastError, PyException);
-create_exception!(fbfast, ConfigurationError, FbFastError);
-create_exception!(fbfast, UnsupportedFeatureError, FbFastError);
-create_exception!(fbfast, UnsupportedStatementError, FbFastError);
-create_exception!(fbfast, ReadOnlyViolationError, FbFastError);
-create_exception!(fbfast, ClientLibraryError, FbFastError);
-create_exception!(fbfast, PoolError, FbFastError);
-create_exception!(fbfast, ForkSafetyError, PoolError);
-create_exception!(fbfast, PoolClosedError, PoolError);
-create_exception!(fbfast, PoolBusyError, PoolError);
-create_exception!(fbfast, PoolTimeoutError, PoolError);
-create_exception!(fbfast, QueryCancelledError, FbFastError);
-create_exception!(fbfast, QueryError, FbFastError);
-create_exception!(fbfast, QueryTimeoutError, QueryError);
-create_exception!(fbfast, AuthenticationError, FbFastError);
-create_exception!(fbfast, RoleNotActiveError, FbFastError);
-create_exception!(fbfast, UnsupportedServerError, FbFastError);
-create_exception!(fbfast, DataConversionError, FbFastError);
-create_exception!(fbfast, UnsupportedTypeError, FbFastError);
-create_exception!(fbfast, ResultLimitError, FbFastError);
-create_exception!(fbfast, CleanupError, FbFastError);
+static MODULE: PyOnceLock<Py<PyModule>> = PyOnceLock::new();
 
-pub fn from_core(error: Error) -> PyErr {
-    let result = match error.kind {
-        ErrorKind::Configuration => ConfigurationError::new_err(error.message),
-        ErrorKind::UnsupportedFeature => UnsupportedFeatureError::new_err(error.message),
-        ErrorKind::UnsupportedStatement => UnsupportedStatementError::new_err(error.message),
-        ErrorKind::ReadOnlyViolation => ReadOnlyViolationError::new_err(error.message),
-        ErrorKind::ClientLibrary => ClientLibraryError::new_err(error.message),
-        ErrorKind::ForkSafety => ForkSafetyError::new_err(error.message),
-        ErrorKind::Query => QueryError::new_err(error.message),
-        ErrorKind::QueryTimeout => QueryTimeoutError::new_err(error.message),
-        ErrorKind::Authentication => AuthenticationError::new_err(error.message),
-        ErrorKind::RoleNotActive => RoleNotActiveError::new_err(error.message),
-        ErrorKind::UnsupportedServer => UnsupportedServerError::new_err(error.message),
-        ErrorKind::DataConversion => DataConversionError::new_err(error.message),
-        ErrorKind::UnsupportedType => UnsupportedTypeError::new_err(error.message),
-        ErrorKind::ResultLimit => ResultLimitError::new_err(error.message),
-        ErrorKind::Cleanup => CleanupError::new_err(error.message),
-        ErrorKind::PoolClosed => PoolClosedError::new_err(error.message),
-        ErrorKind::PoolBusy => PoolBusyError::new_err(error.message),
-        ErrorKind::PoolTimeout => PoolTimeoutError::new_err(error.message),
-        ErrorKind::Cancelled => QueryCancelledError::new_err(error.message),
-    };
-    Python::attach(|py| {
-        // Public errors carry the failure phase even when there is no server status.
-        let _ = result.value(py).setattr("phase", error.phase);
-        let _ = result.value(py).setattr("sqlstate", error.sqlstate);
-        let _ = result.value(py).setattr("native_codes", error.native_codes);
-        let children: Vec<_> = error
-            .cleanup
-            .into_iter()
-            .map(|e| from_core(e).into_value(py))
-            .collect();
-        let _ = result.value(py).setattr("cleanup_errors", children);
-    });
-    result
+fn class_name(error: &Error) -> &'static str {
+    match error.kind {
+        ErrorKind::Configuration => "ConfigurationError",
+        ErrorKind::UnsupportedFeature => "UnsupportedFeatureError",
+        ErrorKind::UnsupportedStatement => "UnsupportedStatementError",
+        ErrorKind::ReadOnlyViolation => "ReadOnlyViolationError",
+        ErrorKind::ClientLibrary => "ClientLibraryError",
+        ErrorKind::ForkSafety => "ForkSafetyError",
+        ErrorKind::Query if is_connection_failure(error) => "DatabaseConnectionError",
+        ErrorKind::Query => "QueryError",
+        ErrorKind::QueryTimeout => "QueryTimeoutError",
+        ErrorKind::Authentication => "AuthenticationError",
+        ErrorKind::RoleNotActive => "RoleNotActiveError",
+        ErrorKind::UnsupportedServer => "UnsupportedServerError",
+        ErrorKind::DataConversion => "DataConversionError",
+        ErrorKind::UnsupportedType => "UnsupportedTypeError",
+        ErrorKind::ResultLimit => "ResultLimitError",
+        ErrorKind::Cleanup => "CleanupError",
+        ErrorKind::PoolClosed => "PoolClosedError",
+        ErrorKind::PoolBusy => "PoolBusyError",
+        ErrorKind::ConcurrentUse => "ConcurrentUseError",
+        ErrorKind::PoolTimeout => "PoolTimeoutError",
+        ErrorKind::Cancelled => "QueryCancelledError",
+    }
 }
 
-pub fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
-    let py = module.py();
-    module.add("PoolClosedError", py.get_type::<PoolClosedError>())?;
-    module.add("PoolBusyError", py.get_type::<PoolBusyError>())?;
-    module.add("PoolTimeoutError", py.get_type::<PoolTimeoutError>())?;
-    module.add("QueryCancelledError", py.get_type::<QueryCancelledError>())?;
-    module.add("QueryError", py.get_type::<QueryError>())?;
-    module.add("QueryTimeoutError", py.get_type::<QueryTimeoutError>())?;
-    module.add("AuthenticationError", py.get_type::<AuthenticationError>())?;
-    module.add("RoleNotActiveError", py.get_type::<RoleNotActiveError>())?;
-    module.add(
-        "UnsupportedServerError",
-        py.get_type::<UnsupportedServerError>(),
-    )?;
-    module.add("DataConversionError", py.get_type::<DataConversionError>())?;
-    module.add(
-        "UnsupportedTypeError",
-        py.get_type::<UnsupportedTypeError>(),
-    )?;
-    module.add("ResultLimitError", py.get_type::<ResultLimitError>())?;
-    module.add("CleanupError", py.get_type::<CleanupError>())?;
-    module.add("ClientLibraryError", py.get_type::<ClientLibraryError>())?;
-    module.add("PoolError", py.get_type::<PoolError>())?;
-    module.add("ForkSafetyError", py.get_type::<ForkSafetyError>())?;
-    module.add("FbFastError", py.get_type::<FbFastError>())?;
-    module.add("ConfigurationError", py.get_type::<ConfigurationError>())?;
-    module.add(
-        "UnsupportedFeatureError",
-        py.get_type::<UnsupportedFeatureError>(),
-    )?;
-    module.add(
-        "UnsupportedStatementError",
-        py.get_type::<UnsupportedStatementError>(),
-    )?;
-    module.add(
-        "ReadOnlyViolationError",
-        py.get_type::<ReadOnlyViolationError>(),
-    )?;
-    Ok(())
+/// Firebird reported a connection exception (SQLSTATE class 08), or the server
+/// or network refused the attach itself. Handshake policy mismatches detected
+/// by fbfast (charset, time zone, encryption policy) carry no SQLSTATE and stay
+/// plain QueryError: retrying cannot fix them.
+fn is_connection_failure(error: &Error) -> bool {
+    let state = error.sqlstate.as_deref();
+    state.is_some_and(|state| state.starts_with("08"))
+        || (error.phase == "attach" && state.is_some_and(|state| state != "28000"))
+}
+
+fn instance(py: Python<'_>, error: Error) -> PyResult<Bound<'_, PyAny>> {
+    let module = MODULE.get_or_try_init(py, || py.import("fbfast._errors").map(Bound::unbind))?;
+    let class = module.bind(py).getattr(class_name(&error))?;
+    let cleanup = error
+        .cleanup
+        .into_iter()
+        .map(|child| instance(py, child))
+        .collect::<PyResult<Vec<_>>>()?;
+    let kwargs = PyDict::new(py);
+    kwargs.set_item("phase", error.phase)?;
+    kwargs.set_item("sqlstate", error.sqlstate)?;
+    kwargs.set_item("native_codes", error.native_codes)?;
+    kwargs.set_item("cleanup_errors", cleanup)?;
+    class.call((error.message,), Some(&kwargs))
+}
+
+/// Every native failure reaches Python through this function, so public errors
+/// always carry `phase`, `sqlstate`, `native_codes` and `cleanup_errors`.
+pub fn from_core(error: Error) -> PyErr {
+    Python::attach(|py| {
+        let message = error.message.clone();
+        match instance(py, error) {
+            Ok(value) => PyErr::from_value(value),
+            Err(failure) => {
+                let fallback = PyRuntimeError::new_err(message);
+                fallback.set_cause(py, Some(failure));
+                fallback
+            }
+        }
+    })
+}
+
+/// Configuration failures raised directly by the binding (keyword parsing).
+pub fn configuration(message: impl Into<String>) -> PyErr {
+    from_core(Error::new(ErrorKind::Configuration, "config", message))
 }

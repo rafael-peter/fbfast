@@ -5,21 +5,20 @@ import os
 from _thread import LockType
 from dataclasses import dataclass
 from threading import Lock
-from typing import Literal, TypeVar
+from typing import Literal
 
-from ._native import (
-    ConfigurationError, FbFastError, FirebirdConfig, ForkSafetyError,
-    PoolClosedError, PoolError,
+from ._errors import (
+    ConfigurationError, FbFastError, ForkSafetyError, PoolAlreadyInitializedError,
+    PoolClosedError, PoolNotInitializedError, usage,
 )
+from ._native import FirebirdConfig
+from ._types import deprecated
 from .pool import Pool
 
-
-class PoolNotInitializedError(PoolError):
-    """No ready pool is registered under the requested name."""
-
-
-class PoolAlreadyInitializedError(PoolError):
-    """A name is already reserved, including while opening or draining."""
+__all__ = [
+    "PoolAlreadyInitializedError", "PoolNotInitializedError", "close_pool", "close_pool_async",
+    "close_pool_sync", "get_pool", "init_pool", "init_pool_async", "init_pool_sync",
+]
 
 
 @dataclass
@@ -31,16 +30,10 @@ class _Entry:
 _pid = os.getpid()
 _lock = Lock()
 _entries: dict[str, _Entry] = {}
-_Error = TypeVar("_Error", bound=FbFastError)
 
 
-def _error(kind: type[_Error], message: str) -> _Error:
-    error = kind(message)
-    error.phase = "registry"
-    error.sqlstate = None
-    error.native_codes = []
-    error.cleanup_errors = []
-    return error
+def _error(kind: type[FbFastError], message: str) -> FbFastError:
+    return usage(kind, message, phase="registry")
 
 
 def _guard() -> LockType:
@@ -112,20 +105,24 @@ def _cleanup_note(original: BaseException, cleanup: BaseException) -> None:
         original.cleanup_errors.append(cleanup)
 
 
-def init_pool_sync(config: FirebirdConfig, *, name: str = "default") -> Pool:
-    """Warm a pool before publishing it. A name is reserved throughout opening.
+def init_pool(config: FirebirdConfig, *, name: str = "default") -> Pool:
+    """Create, warm and register a pool under ``name``; return it.
 
-    On failure, drain before releasing the name. If cleanup times out, call
-    close_pool_sync(name) again; another initialization cannot replace it.
+    The name is reserved while opening. On failure the pool is drained before
+    the name is released; if that cleanup times out, call ``close_pool(name)``
+    again (another initialization cannot replace it meanwhile).
+
+    Raises:
+        PoolAlreadyInitializedError: ``name`` is already registered or reserved.
     """
     entry = _reserve(config, name)
     try:
-        entry.pool.warmup_sync()
+        entry.pool.warmup()
         return _publish(name, entry)
     except BaseException as original:
         try:
             _closing(entry)
-            entry.pool.close_sync()
+            entry.pool.close()
         except BaseException as cleanup:
             _cleanup_note(original, cleanup)
         else:
@@ -133,20 +130,20 @@ def init_pool_sync(config: FirebirdConfig, *, name: str = "default") -> Pool:
         raise
 
 
-async def init_pool(config: FirebirdConfig, *, name: str = "default") -> Pool:
-    """Async warmup then publication, sharing the sync registry and native pool.
+async def init_pool_async(config: FirebirdConfig, *, name: str = "default") -> Pool:
+    """Async :func:`init_pool`, sharing the same registry and native pool.
 
-    Failure/cancellation requests cleanup. If draining fails or is interrupted,
-    the name remains reserved until close_pool(name) completes successfully.
+    Failure or cancellation requests cleanup. If draining fails or is
+    interrupted, the name stays reserved until ``close_pool_async(name)`` succeeds.
     """
     entry = _reserve(config, name)
     try:
-        await entry.pool.warmup()
+        await entry.pool.warmup_async()
         return _publish(name, entry)
     except BaseException as original:
         try:
             _closing(entry)
-            await entry.pool.close()
+            await entry.pool.aclose()
         except BaseException as cleanup:
             _cleanup_note(original, cleanup)
         else:
@@ -155,9 +152,14 @@ async def init_pool(config: FirebirdConfig, *, name: str = "default") -> Pool:
 
 
 def get_pool(name: str = "default") -> Pool:
-    """Return the registered instance; never open a pool implicitly.
+    """Return the pool registered under ``name``; never opens one implicitly.
 
-    Opening and closing names are unavailable for new lookups.
+    This is how code that did not create the pool (a FastAPI route, a job,
+    another module) reaches it. Module functions such as ``fbfast.fetch_all``
+    call ``get_pool(pool).fetch_all(...)`` for you.
+
+    Raises:
+        PoolNotInitializedError: no ready pool has that name (also while opening or closing).
     """
     _name(name)
     with _guard():
@@ -167,20 +169,32 @@ def get_pool(name: str = "default") -> Pool:
         return entry.pool
 
 
-def close_pool_sync(name: str = "default") -> None:
-    """Stop new lookups, drain and remove the pool. An absent name is a no-op.
+def close_pool(name: str = "default") -> None:
+    """Stop new lookups, drain and unregister the pool. An absent name is a no-op.
 
-    A timeout/error keeps the name reserved; retry close to finish draining.
+    A timeout or error keeps the name reserved; call again to finish draining.
     """
     entry = _lookup_close(name)
     if entry is not None:
-        entry.pool.close_sync()
+        entry.pool.close()
         _remove(name, entry)
 
 
-async def close_pool(name: str = "default") -> None:
-    """Async drain and removal. Cancellation retains the reservation for retry."""
+async def close_pool_async(name: str = "default") -> None:
+    """Async :func:`close_pool`. Cancellation keeps the reservation for a retry."""
     entry = _lookup_close(name)
     if entry is not None:
-        await entry.pool.close()
+        await entry.pool.aclose()
         _remove(name, entry)
+
+
+def init_pool_sync(config: FirebirdConfig, *, name: str = "default") -> Pool:
+    """Deprecated alias of :func:`init_pool`."""
+    deprecated("init_pool_sync()", "init_pool()")
+    return init_pool(config, name=name)
+
+
+def close_pool_sync(name: str = "default") -> None:
+    """Deprecated alias of :func:`close_pool`."""
+    deprecated("close_pool_sync()", "close_pool()")
+    close_pool(name)

@@ -33,15 +33,15 @@ def test_models_pool_snapshot_and_recovery(fb, config):
 
 def test_models_async_and_named_pool(fb, config):
     async def run():
-        await fb.init_pool(config(pool_size=1), name='models')
+        await fb.init_pool_async(config(pool_size=1), name='models')
         try:
             rows = await fb.fetch_all_async(SQL, model=Order, pool='models')
             assert await fb.fetch_one_async(SQL, model=Order, pool='models') == rows[0]
-            async with fb.get_pool('models').snapshot_async() as snapshot:
+            async with fb.get_pool('models').snapshot() as snapshot:
                 assert await snapshot.fetch_all_async(SQL, model=Order) == rows
                 assert await snapshot.fetch_one_async(SQL, model=Order) == rows[0]
         finally:
-            await fb.close_pool('models')
+            await fb.close_pool_async('models')
     asyncio.run(run())
 
 

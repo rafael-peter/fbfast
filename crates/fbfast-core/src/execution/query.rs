@@ -9,6 +9,8 @@ use crate::{
 use std::time::Instant;
 
 impl ExecutionConnection {
+    /// Test helper without a pool, cancellation or tracing.
+    #[doc(hidden)]
     pub fn fetch_rows(
         &mut self,
         sql: &str,
@@ -22,6 +24,7 @@ impl ExecutionConnection {
             &QueryOptions {
                 first,
                 unique_names: false,
+                prevalidated: false,
                 deadline: deadline(timeout)?,
                 cancellation: &Cancellation::default(),
                 cleaning: &|| Ok(false),
@@ -56,6 +59,8 @@ impl ExecutionConnection {
         })
     }
 
+    /// Test helper without a pool, cancellation or tracing.
+    #[doc(hidden)]
     pub fn explain(
         &mut self,
         sql: &str,
@@ -68,6 +73,7 @@ impl ExecutionConnection {
             &QueryOptions {
                 first: true,
                 unique_names: false,
+                prevalidated: false,
                 deadline: deadline(timeout)?,
                 cancellation: &Cancellation::default(),
                 cleaning: &|| Ok(false),
@@ -97,9 +103,16 @@ impl ExecutionConnection {
         action: impl FnOnce(&mut Self, &Entry, Option<Instant>) -> Result<T, Error>,
     ) -> Result<T, Error> {
         let deadline = self.operation_deadline(options.deadline);
+        // Owners finish deferred cleanup before reuse; never start on top of it.
+        if self.has_deferred_cleanup() {
+            self.finish_deferred_cleanup()?;
+        }
         let validation = self
             .check()
-            .and_then(|_| validate_read_query(sql))
+            .and_then(|_| match options.prevalidated {
+                true => Ok(()),
+                false => validate_read_query(sql).map(drop),
+            })
             .and_then(|_| options.cancellation.check())
             .and_then(|_| check_deadline(deadline));
         if let Err(error) = validation {
@@ -110,12 +123,21 @@ impl ExecutionConnection {
             };
         }
         if self.snapshot.is_none() {
-            if let Err(error) = self.native.begin(false, self.config.lock_timeout, None) {
-                self.healthy = false;
-                return Err(error.into());
+            // A transaction pre-started by the previous operation's session
+            // reset saves this round trip; otherwise start one now.
+            if self.ready.take().is_none() {
+                if let Err(error) = self.native.begin(false, self.config.lock_timeout, None) {
+                    self.healthy = false;
+                    return Err(error.into());
+                }
             }
+            self.restartable = true;
+            self.mark("begin");
         }
-        let (result, entry) = match self.prepare_entry(sql) {
+        let prepared = self.prepare_entry(sql);
+        self.mark("prepare");
+        self.drained = prepared.as_ref().is_ok_and(|entry| !entry.plan.has_blobs());
+        let (result, entry) = match prepared {
             Ok(entry) => {
                 let result = options
                     .cancellation
@@ -136,6 +158,9 @@ impl ExecutionConnection {
 
     fn prepare_entry(&mut self, sql: &str) -> Result<Entry, Error> {
         if let Some(entry) = self.cache.take(sql) {
+            if let Some(trace) = &mut self.trace {
+                trace.record.statement_cached = true;
+            }
             return Ok(entry);
         }
         let id = self.native.prepare(sql)?;

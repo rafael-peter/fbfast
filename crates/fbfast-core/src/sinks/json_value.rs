@@ -192,4 +192,25 @@ mod tests {
         .unwrap();
         assert_eq!(out, br#""AP8=""#);
     }
+    #[test]
+    fn float_text_is_shortest_round_trip_with_explicit_exponent_sign() {
+        // serde_json >= 1.0.147 writes large/small magnitudes as `1e+20`
+        // (formerly `1e20`). Both are valid JSON numbers; pin the visible text.
+        let options = JsonOptions::default();
+        for (number, expected) in [
+            (1e20, "1e+20"),
+            (-1.5e300, "-1.5e+300"),
+            (1e-7, "1e-7"),
+            (123456.75, "123456.75"),
+            (0.1, "0.1"),
+            (-0.0, "-0.0"),
+            (f64::MAX, "1.7976931348623157e+308"),
+        ] {
+            let mut out = Vec::new();
+            value(&mut out, &Value::Float(number), 480, options).unwrap();
+            let text = std::str::from_utf8(&out).unwrap();
+            assert_eq!(text, expected);
+            assert_eq!(text.parse::<f64>().unwrap().to_bits(), number.to_bits());
+        }
+    }
 }

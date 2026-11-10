@@ -49,6 +49,9 @@ impl<C: BatchConsumer> RowSink for Batches<'_, C> {
     ) -> Result<(), Error> {
         self.rows.push(plan, row, &self.config, native)
     }
+    fn pending_bytes(&self) -> usize {
+        self.rows.bytes
+    }
     fn after_fetch(&mut self) -> Result<bool, Error> {
         if self.rows.count == 0 {
             return Ok(true);
@@ -84,10 +87,6 @@ impl ExecutionConnection {
             if options.unique_names {
                 rows.require_unique_names()?;
             }
-            let row_bytes = entry.plan.row_capacity_bytes()?.max(1) as u64;
-            let byte_rows =
-                (connection.config.batch_bytes / row_bytes).clamp(1, u32::MAX as u64) as u32;
-            let batch_rows = batch_rows.min(byte_rows);
             // Streaming does not apply the cumulative materialization quota.
             // Native batch/cell bounds still apply; the caller owns retained batches.
             let mut config = connection.config.clone();

@@ -65,4 +65,9 @@ pub struct Config {
     pub statement_cache_bytes: u64,
     pub trim_char: bool,
     pub fallback_charset: Option<String>,
+    pub snapshot_timeout: Option<f64>,
+    pub max_inline_blob_size: Option<u32>,
+    pub blob_cache_size: Option<u64>,
+    pub diagnostics: bool,
+    pub ready_transaction_timeout: Option<f64>,
 }

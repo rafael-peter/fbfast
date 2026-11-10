@@ -98,6 +98,8 @@ impl DecodePlan {
         })
     }
 
+    /// Test helper for values that need no native decoder (no BLOB/DECFLOAT/zones).
+    #[doc(hidden)]
     pub fn value(&self, index: usize, row: &[u8]) -> Result<Value, Error> {
         self.value_with_native(index, row, &mut NoNative)
     }

@@ -1,5 +1,7 @@
 use super::{
-    control::QueryOptions, cursor::RowSink, BatchConsumer, ExecutionConnection, StreamSummary,
+    control::QueryOptions,
+    cursor::{native_batch_rows, RowSink},
+    BatchConsumer, ExecutionConnection, StreamSummary,
 };
 use crate::{
     config::Config,
@@ -40,6 +42,9 @@ impl<C: ArrowConsumer> RowSink for Batches<'_, C> {
     ) -> Result<(), Error> {
         self.builder.push(plan, row, native)
     }
+    fn pending_bytes(&self) -> usize {
+        self.builder.pending_bytes
+    }
     fn after_fetch(&mut self) -> Result<bool, Error> {
         if self.builder.rows == 0 {
             return Ok(true);
@@ -67,14 +72,7 @@ impl ExecutionConnection {
         }
         self.operation(sql, options, |connection, entry, deadline| {
             let bytes = connection.config.batch_bytes;
-            let capacity = if entry.plan.has_blobs() {
-                1
-            } else {
-                batch_rows.min(
-                    (bytes / entry.plan.row_capacity_bytes()?.max(1) as u64)
-                        .clamp(1, u32::MAX as u64) as u32,
-                )
-            };
+            let capacity = native_batch_rows(&entry.plan, batch_rows, bytes)?;
             let mut sink = Batches {
                 builder: ArrowBuilder::new(
                     &entry.plan,

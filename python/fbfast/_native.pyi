@@ -1,56 +1,39 @@
 from pathlib import Path
-from typing import Any, Awaitable, Literal
+from typing import Any, Awaitable, Literal, final
 
 def compiled_info() -> str: ...
 def load_client(path: Path) -> dict[str, Any]: ...
 
-class FbFastError(Exception):
-    phase: str
-    sqlstate: str | None
-    native_codes: list[int]
-    cleanup_errors: list[FbFastError]
-
-class ConfigurationError(FbFastError): ...
-class UnsupportedFeatureError(FbFastError): ...
-class UnsupportedStatementError(FbFastError): ...
-class ReadOnlyViolationError(FbFastError): ...
-class ClientLibraryError(FbFastError): ...
-class PoolError(FbFastError): ...
-class ForkSafetyError(PoolError): ...
-class PoolBusyError(PoolError): ...
-class PoolClosedError(PoolError): ...
-class PoolTimeoutError(PoolError): ...
-class QueryError(FbFastError): ...
-class QueryTimeoutError(QueryError): ...
-class QueryCancelledError(FbFastError): ...
-class AuthenticationError(FbFastError): ...
-class CleanupError(FbFastError): ...
-class DataConversionError(FbFastError): ...
-class ResultLimitError(FbFastError): ...
-class RoleNotActiveError(FbFastError): ...
-class UnsupportedServerError(FbFastError): ...
-class UnsupportedTypeError(FbFastError): ...
-
+@final
 class ArrowSchema:
     """Owned schema exportable through the Arrow C Data protocol; no extra required."""
     @property
-    def names(self) -> list[str]: ...
+    def names(self) -> list[str]:
+        """Column names in result order."""
     def __len__(self) -> int: ...
-    def __arrow_c_schema__(self) -> object: ...
+    def __arrow_c_schema__(self) -> object:
+        """Arrow PyCapsule export of the schema (``pyarrow.schema(schema)``)."""
 
+@final
 class ArrowBatch:
     """Owned native columns; exported buffers remain valid after stream/pool close."""
     @property
-    def num_rows(self) -> int: ...
+    def num_rows(self) -> int:
+        """Rows in this batch."""
     @property
-    def num_columns(self) -> int: ...
+    def num_columns(self) -> int:
+        """Columns in this batch."""
     @property
-    def nbytes(self) -> int: ...
+    def nbytes(self) -> int:
+        """Bytes held by the batch's Arrow buffers."""
     @property
-    def schema(self) -> ArrowSchema: ...
+    def schema(self) -> ArrowSchema:
+        """Column names and Arrow types, including SQL metadata."""
     def __len__(self) -> int: ...
-    def __arrow_c_array__(self, requested_schema: object | None = None) -> tuple[object, object]: ...
+    def __arrow_c_array__(self, requested_schema: object | None = None) -> tuple[object, object]:
+        """Arrow PyCapsule export, e.g. ``pyarrow.record_batch(batch)`` or ``polars.from_arrow``."""
 
+@final
 class _Stream:
     @property
     def schema(self) -> ArrowSchema: ...
@@ -62,6 +45,7 @@ class _Stream:
     def next_async(self) -> Awaitable[Any]: ...
     def close_async(self) -> Awaitable[None]: ...
 
+@final
 class _Pool:
     def arrow(self, sql: str, params: list[Any] | tuple[Any, ...] | None = None, *, mode: str = "arrow", timeout: float | None = None, asynchronous: bool = False) -> Any: ...
     def json(self, sql: str, params: list[Any] | tuple[Any, ...] | None = None, *, options: tuple[str, str, str, str, str], timeout: float | None = None, asynchronous: bool = False) -> Any: ...
@@ -83,13 +67,26 @@ class _Pool:
     def warmup_sync(self) -> None: ...
     def close_sync(self) -> None: ...
     def stats(self) -> dict[str, int | bool]: ...
+    def diagnostics(self) -> list[dict[str, Any]]: ...
+    def session_info(self) -> dict[str, Any] | None: ...
+    def group(self, specs: list[tuple[str, str, list[Any] | tuple[Any, ...] | None, float | None, Any]], *, concurrency: int, timeout: float | None = None) -> _Group: ...
 
+@final
+class _Group:
+    def next(self) -> tuple[int, bool, Any] | None: ...
+    def cancel(self) -> None: ...
+    def remaining(self) -> int: ...
+    @property
+    def concurrency(self) -> int: ...
+
+@final
 class FirebirdConfig:
-    """Configuração imutável; ``FirebirdConfig()`` já lê ``FB_*`` e ``.env``.
+    """Immutable connection and pool settings; ``FirebirdConfig()`` reads ``FB_*`` and ``.env``.
 
-    Precedência por campo: argumento explícito > ambiente > arquivo .env > padrão.
-    Database, user e password precisam existir em alguma dessas fontes.
-    Consulte os parâmetros do construtor para função, limites e padrões.
+    Precedence per option: explicit argument > environment > ``.env`` file > default.
+    ``database``, ``user`` and ``password`` have no default and must come from one
+    of these sources. Construction validates everything but never connects.
+    See the constructor parameters for meaning, limits and defaults.
     """
 
     # One logical line per parameter keeps its full help visible in Pyright/Pylance.
@@ -131,71 +128,81 @@ class FirebirdConfig:
         statement_cache_bytes: int = ...,
         trim_char: bool = ...,
         fallback_charset: str | None = ...,
+        snapshot_timeout: float | None = ...,
+        max_inline_blob_size: int | None = ...,
+        blob_cache_size: int | None = ...,
+        diagnostics: bool = ...,
+        ready_transaction_timeout: float | None = ...,
         env_file: str | Literal[False] = ...,
     ) -> None:
-        """Resolve e valida a configuração, sem conectar ao banco.
+        """Resolve and validate the configuration without connecting.
 
-        Cada argumento omitido usa FB_<NOME_EM_MAIÚSCULAS> do ambiente,
-        depois a mesma variável no .env e, por último, o padrão abaixo.
-        ``...`` na assinatura significa omissão; não passe Ellipsis como valor.
-        None explícito prevalece sobre o ambiente nos campos que o aceitam.
-        Valores inválidos geram erro, sem recorrer silenciosamente ao padrão.
-        Durações usam segundos positivos e finitos, até 4_294_967.295 s;
-        lock_timeout aceita zero. No ambiente/.env, números são texto,
-        booleanos aceitam true/false, 1/0 e yes/no, e "none" representa None.
-        O arquivo .env não modifica os.environ.
+        Each omitted argument uses the FB_<UPPER_NAME> environment variable, then
+        the same variable in .env, then the default listed below. ``...`` in the
+        signature means "omitted"; never pass Ellipsis as a value. An explicit
+        None wins over the environment for options that accept None. Invalid
+        values raise instead of silently falling back to a default. Durations
+        are positive, finite seconds up to 4_294_967.295; lock_timeout accepts
+        zero. In the environment/.env, numbers are text, booleans accept
+        true/false, 1/0 and yes/no, and "none" means None. Reading .env never
+        modifies os.environ.
 
         Args:
-            host: Servidor Firebird (str não vazia). FB_HOST; padrão "localhost".
-            port: Porta TCP (int de 1 a 65535). FB_PORT; padrão 3050.
-            database: Alias ou caminho do banco no servidor (str não vazia). FB_DATABASE; sem padrão, obrigatório em alguma fonte.
-            user: Usuário Firebird (str não vazia). FB_USER; sem padrão, obrigatório em alguma fonte.
-            password: Senha (str não vazia), ocultada no repr. FB_PASSWORD; sem padrão, obrigatória em alguma fonte.
-            role: Role SQL a ativar (str | None). FB_ROLE; padrão None. None explícito ignora a role do ambiente.
-            read_only: Somente True é suportado (Literal[True]). FB_READ_ONLY; padrão True. False gera UnsupportedFeatureError.
-            charset: Charset da conexão (str não vazia). FB_CHARSET; padrão "UTF8". O executor atual suporta apenas UTF8.
-            session_time_zone: Fuso da sessão, por exemplo "America/Sao_Paulo" (str não vazia). FB_SESSION_TIME_ZONE; padrão "UTC".
-            client_library: Caminho de libfbclient (str | None). FB_CLIENT_LIBRARY; padrão None, usando o runtime empacotado.
-            wire_crypt: Política de criptografia: "required", "enabled" ou "disabled"; também aceita bool (True=required, False=disabled). FB_WIRE_CRYPT; padrão "required". Enabled negocia e permite conexão sem criptografia; required exige criptografia.
-            wire_compression: Solicita compressão negociada com o servidor (bool). FB_WIRE_COMPRESSION; padrão False.
-            app_name: Nome da aplicação na conexão (str não vazia). FB_APP_NAME; padrão "fbfast".
-            pool_size: Teto de conexões/workers (int >= 1). FB_POOL_SIZE; padrão 8. Deve ser >= min_idle.
-            min_idle: Mínimo de conexões mantidas prontas (int >= 0 e <= pool_size). FB_MIN_IDLE; padrão 2. Use 0 para não manter conexões ociosas.
-            max_waiters: Teto de chamadas na fila (int >= 1). FB_MAX_WAITERS; padrão 256. Fila cheia gera PoolBusyError.
-            acquire_timeout: Prazo para obter uma conexão pronta (float, s), incluindo attach/handshake necessários. FB_ACQUIRE_TIMEOUT; padrão 5.0. Não aceita None.
-            connect_timeout: Prazo para attach e handshake (float, s), limitado também pelo prazo de aquisição. FB_CONNECT_TIMEOUT; padrão 5.0.
-            idle_timeout: Tempo ocioso antes de reciclar conexões excedentes a min_idle (float, s). FB_IDLE_TIMEOUT; padrão 300.0.
-            max_lifetime: Vida alvo da conexão, com variação para distribuir reciclagens (float, s). Não interrompe trabalho ativo. FB_MAX_LIFETIME; padrão 1800.0.
-            health_check_after: Ociosidade após a qual se verifica a conexão antes de reutilizar (float, s). FB_HEALTH_CHECK_AFTER; padrão 30.0.
-            close_timeout: Prazo de espera pelo fechamento/cleanup (float, s). FB_CLOSE_TIMEOUT; padrão 10.0. Trabalho nativo pendente continua contado até terminar, mesmo se o chamador atingir esse prazo.
-            fetch_size: Linhas alvo por lote (int >= 1), também usadas quando batch_rows é omitido no stream. FB_FETCH_SIZE; padrão 5000.
-            batch_bytes: Orçamento de bytes por lote (int >= 1); uma linha maior pode formar um lote único. Não limita toda a memória Python. FB_BATCH_BYTES; padrão 4_194_304 (4 MiB).
-            prefetch_batches: Lotes antecipados além do corrente (int >= 0). FB_PREFETCH_BATCHES; padrão 1. Zero desativa antecipação.
-            max_result_bytes: Orçamento cumulativo por resultado materializado (int >= 1 | None); não limita streams nem é teto exato de RSS. FB_MAX_RESULT_BYTES; padrão 536_870_912 (512 MiB). None explícito desativa o limite.
-            max_result_rows: Limite de linhas do resultado materializado (int >= 1 | None); não limita streams. FB_MAX_RESULT_ROWS; padrão None (sem limite). None explícito ignora o ambiente.
-            max_blob_bytes: Limite por BLOB materializado (int >= 1), inclusive em streams. FB_MAX_BLOB_BYTES; padrão 67_108_864 (64 MiB). Para texto conhecido, conta bytes após transliteração para UTF8; exceder gera ResultLimitError.
-            query_timeout: Prazo padrão da consulta, incluindo consumo e conversão Python (float | None, s). FB_QUERY_TIMEOUT; padrão 30.0. None explícito desativa esse prazo.
-            lock_timeout: Espera por locks no servidor (int >= 0, s). FB_LOCK_TIMEOUT; padrão 5. Zero usa NO WAIT.
-            stream_idle_timeout: Prazo do produtor parado esperando demanda do consumidor (float | None, s). FB_STREAM_IDLE_TIMEOUT; padrão 30.0. None desativa; não altera query_timeout.
-            statement_cache_size: Teto de statements preparados por conexão (int >= 0). FB_STATEMENT_CACHE_SIZE; padrão 64. Zero desativa.
-            statement_cache_bytes: Orçamento estimado do cache por conexão (int >= 1, bytes). FB_STATEMENT_CACHE_BYTES; padrão 8_388_608 (8 MiB).
-            trim_char: Remove espaços finais de campos CHAR, preservando VARCHAR (bool). FB_TRIM_CHAR; padrão False.
-            fallback_charset: Charset para textos sem charset definido (str | None). FB_FALLBACK_CHARSET; padrão None. Atualmente aceita UTF8/UTF-8; usado por texto e BLOB TEXT de charset NONE. Bytes inválidos geram DataConversionError.
-            env_file: Arquivo dotenv (str) ou False para desativar a leitura. Omitido: tenta .env no diretório atual, sem exigir sua existência. Caminho explícito precisa existir. False mantém a leitura de FB_*. Não há variável FB_ENV_FILE. True e None não são aceitos.
+            host: Firebird server host name or address (non-empty str). [env FB_HOST; default "localhost"]
+            port: TCP port (int, 1..65535). [env FB_PORT; default 3050]
+            database: Database alias or path on the server (non-empty str). [env FB_DATABASE; required]
+            user: Firebird user (non-empty str). [env FB_USER; required]
+            password: Password (non-empty str), hidden in repr. Accessing config.password returns a normal str; never log it. [env FB_PASSWORD; required]
+            role: SQL role to activate (str | None). An explicit None ignores a role from the environment. [env FB_ROLE; default None]
+            read_only: Only True is supported (Literal[True]); False raises UnsupportedFeatureError. [env FB_READ_ONLY; default True]
+            charset: Connection charset (non-empty str). Only UTF8 is supported by the executor. [env FB_CHARSET; default "UTF8"]
+            session_time_zone: Session time zone such as "America/Sao_Paulo" (non-empty str). [env FB_SESSION_TIME_ZONE; default "UTC"]
+            client_library: Path to a libfbclient to use instead of the bundled one (str | None). [env FB_CLIENT_LIBRARY; default None]
+            wire_crypt: Wire encryption policy: "required", "enabled" or "disabled"; bools are accepted (True=required, False=disabled). "enabled" allows an unencrypted connection; keep "required" unless the transport is reviewed. [env FB_WIRE_CRYPT; default "required"]
+            wire_compression: Request zlib wire compression; the server must agree. Helps on slow links, costs CPU on fast ones. Check Pool.session_info()["wire_compressed"]. [env FB_WIRE_COMPRESSION; default False]
+            app_name: Application name reported to the server (non-empty str). [env FB_APP_NAME; default "fbfast"]
+            pool_size: Maximum connections and native workers (int >= 1); must be >= min_idle. Also the default and maximum concurrency of run_all/run_many. [env FB_POOL_SIZE; default 8]
+            min_idle: Connections kept open and ready (0 <= int <= pool_size). Use 0 to keep none. [env FB_MIN_IDLE; default 2]
+            max_waiters: Calls allowed to wait in the queue (int >= 1); a full queue raises PoolBusyError. [env FB_MAX_WAITERS; default 256]
+            acquire_timeout: Seconds to obtain a ready connection, including any attach/handshake (float; None not allowed). [env FB_ACQUIRE_TIMEOUT; default 5.0]
+            connect_timeout: Seconds for attach and handshake, also bounded by acquire_timeout (float). [env FB_CONNECT_TIMEOUT; default 5.0]
+            idle_timeout: Seconds idle before connections beyond min_idle are closed (float). [env FB_IDLE_TIMEOUT; default 300.0]
+            max_lifetime: Target connection lifetime in seconds, jittered so recycling spreads out; active work is never interrupted (float). [env FB_MAX_LIFETIME; default 1800.0]
+            health_check_after: Seconds idle after which a connection is pinged; done off the critical path, which also keeps tunnels and NAT mappings alive (float). [env FB_HEALTH_CHECK_AFTER; default 30.0]
+            close_timeout: Seconds to wait for close/cleanup (float). Native work still pending after it stays counted until it finishes. [env FB_CLOSE_TIMEOUT; default 10.0]
+            fetch_size: Target rows per batch (int >= 1); also the default batch_rows of streams. [env FB_FETCH_SIZE; default 5000]
+            batch_bytes: Byte budget per batch (int >= 1); a single larger row forms its own batch. BLOB batches close once their decoded bytes reach it. Not a limit on total Python memory. [env FB_BATCH_BYTES; default 4_194_304 (4 MiB)]
+            prefetch_batches: Batches fetched ahead of the consumer (int >= 0); zero disables read-ahead. [env FB_PREFETCH_BATCHES; default 1]
+            max_result_bytes: Cumulative budget per materialized result (int >= 1 | None); does not apply to streams and is not an exact RSS cap. None disables it. [env FB_MAX_RESULT_BYTES; default 536_870_912 (512 MiB)]
+            max_result_rows: Row limit per materialized result (int >= 1 | None); does not apply to streams. [env FB_MAX_RESULT_ROWS; default None]
+            max_blob_bytes: Limit per BLOB value, also in streams (int >= 1). Known text charsets count bytes after conversion to UTF-8; exceeding it raises ResultLimitError. [env FB_MAX_BLOB_BYTES; default 67_108_864 (64 MiB)]
+            query_timeout: Default per-query deadline in seconds, including fetching and Python conversion (float | None). None disables it. [env FB_QUERY_TIMEOUT; default 30.0]
+            lock_timeout: Seconds the server waits for locks (int >= 0); zero means NO WAIT. [env FB_LOCK_TIMEOUT; default 5]
+            stream_idle_timeout: Seconds a stream producer waits for the consumer to ask for more (float | None); None disables it. Independent of query_timeout. [env FB_STREAM_IDLE_TIMEOUT; default 30.0]
+            statement_cache_size: Prepared statements kept per connection (int >= 0); zero disables the cache. [env FB_STATEMENT_CACHE_SIZE; default 64]
+            statement_cache_bytes: Estimated statement cache budget per connection (int >= 1, bytes). [env FB_STATEMENT_CACHE_BYTES; default 8_388_608 (8 MiB)]
+            trim_char: Strip trailing spaces from CHAR columns, never VARCHAR (bool). [env FB_TRIM_CHAR; default False]
+            fallback_charset: Charset for text without one (charset NONE), str | None. Currently only UTF8/UTF-8; applies to text and NONE text BLOBs. Invalid bytes raise DataConversionError. [env FB_FALLBACK_CHARSET; default None]
+            snapshot_timeout: Deadline for a whole snapshot scope, including time between its queries (float | None, seconds). Each query inside still uses query_timeout. None disables it. [env FB_SNAPSHOT_TIMEOUT; default 300.0]
+            max_inline_blob_size: Largest BLOB a Firebird 5.0.3+ server sends together with its row (int 0..65535 | None, bytes); 0 disables inline BLOBs. None keeps the client default (65535). [env FB_MAX_INLINE_BLOB_SIZE; default None]
+            blob_cache_size: Client cache for inline BLOBs per connection (int >= 0 | None, bytes). None keeps the client default (10 MiB). [env FB_BLOB_CACHE_SIZE; default None]
+            diagnostics: Record time and round trips per phase for every pool query, read with Pool.diagnostics() (bool). Reading the counters adds no round trip. [env FB_DIAGNOSTICS; default False]
+            ready_transaction_timeout: After a query that read all its rows, its session reset also starts the next query's transaction, so the next query skips one round trip; an unused transaction is rolled back after this many idle seconds (float | None). None disables the reuse. [env FB_READY_TRANSACTION_TIMEOUT; default 2.0]
+            env_file: dotenv path (str) or False to skip it. Omitted: read .env in the current directory if it exists; an explicit path must exist. False keeps reading FB_* variables. There is no FB_ENV_FILE; True and None are rejected.
 
         Raises:
-            ConfigurationError: Campo obrigatório ausente, valor inválido,
-                opção desconhecida ou erro no arquivo dotenv.
+            ConfigurationError: A required option is missing, a value is invalid,
+                an option is unknown or the dotenv file is invalid.
             UnsupportedFeatureError: read_only=False.
         """
         ...
     @classmethod
     def from_env(cls, prefix: str = "FB_", *, env_file: str | Literal[False] = ...) -> FirebirdConfig:
-        """Atalho opcional para prefixo personalizado; FirebirdConfig() já lê FB_*.
+        """Optional shortcut for a custom variable prefix; FirebirdConfig() already reads FB_*.
 
         Args:
-            prefix: Prefixo das variáveis; padrão "FB_". Exemplo: "FB_BI_".
-            env_file: Caminho dotenv ou False; omitido tenta .env no diretório atual.
+            prefix: Variable prefix; default "FB_". Example: "FB_BI_" reads FB_BI_HOST...
+            env_file: dotenv path or False; omitted reads .env in the current directory.
         """
         ...
     @property
@@ -268,3 +275,13 @@ class FirebirdConfig:
     def trim_char(self) -> bool: ...
     @property
     def fallback_charset(self) -> str | None: ...
+    @property
+    def snapshot_timeout(self) -> float | None: ...
+    @property
+    def max_inline_blob_size(self) -> int | None: ...
+    @property
+    def blob_cache_size(self) -> int | None: ...
+    @property
+    def diagnostics(self) -> bool: ...
+    @property
+    def ready_transaction_timeout(self) -> float | None: ...

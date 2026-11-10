@@ -19,6 +19,8 @@ pub enum ErrorKind {
     QueryTimeout,
     PoolClosed,
     PoolBusy,
+    /// A snapshot or stream was used by two operations at once.
+    ConcurrentUse,
     PoolTimeout,
     Cancelled,
 }

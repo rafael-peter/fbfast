@@ -16,6 +16,8 @@ fn connect() -> Connection {
             wire_crypt: "required",
             wire_compression: false,
             connect_seconds: 5,
+            max_inline_blob_size: None,
+            blob_cache_size: None,
         },
     )
     .unwrap()

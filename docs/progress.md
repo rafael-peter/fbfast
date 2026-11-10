@@ -1,5 +1,41 @@
 # Evidência de implementação
 
+## Versão 0.3.0 — 2026-11-06 (local, não publicada)
+
+- Escopos 1–9 do `docs/plans/0.3.0.md` implementados; o quadro "Execução" do plano lista o que
+  ficou parcial (Escopo 8) e o que foi para a 0.4.0.
+- Validação local em macOS arm64 / CPython 3.14 contra fixture descartável Firebird 5.0.3:
+  **284 testes de integração Python**, **36 testes Rust/C++ com servidor**, 40 de models/API
+  (2 pulos do SDK), 30 de packaging e os 6 exemplos. Testes Rust offline, Clippy com warnings
+  negados, rustfmt, ruff, mypy, contrato de tipos, stubtest, limite de módulos, actionlint e
+  `cargo audit` (134 e 94 crates, sem advisory) também passaram.
+- Wheel manylinux 2.28 aarch64 / CPython 3.15 gerado em contêiner com a imagem fixada,
+  reparado pelo auditwheel 6.8.2 (RPATH `$ORIGIN` preservado). A cópia instalada passou nos
+  testes de models/API, no stubtest, no smoke com servidor real e nos exemplos.
+- Esse smoke Linux encontrou um bug do 5B antes da release: depois de um `snapshot()`, a limpeza
+  adiada reiniciava a transação SNAPSHOT como transação pronta. Corrigido (só transações do pool
+  são reiniciadas) e coberto por teste que confere `MON$ISOLATION_MODE` depois de snapshot e
+  stream.
+- Benchmark de latência com toxiproxy (0, 5, 20 e 50 ms), dados brutos em `benchmarks/results/`:
+  baseline `20261106T145109Z-latency-baseline-0.2.1`; 0.3.0 só com 5A
+  `20261106T152247Z-latency-0.3.0`; final `20261106T154216Z-latency-0.3.0-final`
+  (`comparison.md`); casos pequenos aquecidos `20261106T162013Z-warm-baseline-0.2.1` e
+  `20261106T162154Z-warm-0.3.0`. A 20 ms: BLOB de texto pequeno (1.000 linhas) 28,3 s → 0,19 s;
+  `pk` 91 → 22 ms; 32 consultas simultâneas 468 → 191 ms (firebird-driver 427 ms).
+- A rodada final expôs uma corrida antiga no cancelamento: um `fb_cancel_raise` que chega ao
+  servidor entre o prepare e o início da execução é ignorado, e o controlador nunca repetia.
+  Agora repete a cada 200 ms enquanto a operação está armada (o portão de geração impede que
+  atinja a limpeza). Os testes de cancelamento passaram 4 vezes seguidas depois disso.
+- Na suíte completa final, `test_snapshot_reserves_single_slot_until_cleanup_and_waiters_resume`
+  falhou uma vez porque abrir a conexão passou dos 30 ms de `acquire_timeout` do próprio teste;
+  o arquivo passou 5 vezes seguidas isolado.
+- Medições pontuais: a transação pronta segura o OST (não OIT/OAT) até `ready_transaction_timeout`;
+  `TcpRemoteBufferSize` só no cliente não mudou idas e voltas nem tempo; a compressão passou a
+  ser negociada no macOS com o stub do zlib.
+- Ainda não validado: CI completo (25 wheels, Windows com o passo novo de MSVC, x86_64,
+  ASan/UBSan e fuzz), servidor 5.0.4 com o cliente 5.0.3 nesta versão, e nenhum banco
+  operacional.
+
 ## Security and release update 0.2.1 — 2026-10-16 (published)
 
 - Restored `max_result_bytes` with a 512 MiB default, explicit `None`, checked

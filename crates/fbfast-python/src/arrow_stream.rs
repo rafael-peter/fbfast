@@ -11,7 +11,7 @@ use std::{fmt, sync::Arc, time::Duration};
 
 pub fn busy() -> Error {
     Error::new(
-        ErrorKind::PoolBusy,
+        ErrorKind::ConcurrentUse,
         "arrow_stream",
         "Arrow C Stream already owns consumption",
     )
@@ -58,13 +58,7 @@ impl Reader {
             let item = Python::try_attach(|py| {
                 py.check_signals()
                     .map_err(|e| ArrowError::ExternalError(Box::new(e)))?;
-                py.detach(|| {
-                    let item = wait.poll().map_err(foreign)?;
-                    if item.is_none() {
-                        std::thread::sleep(Duration::from_millis(5));
-                    }
-                    Ok::<_, ArrowError>(item)
-                })
+                py.detach(|| wait.wait(Duration::from_millis(25)).map_err(foreign))
             })
             .ok_or_else(|| {
                 ArrowError::CDataInterface(

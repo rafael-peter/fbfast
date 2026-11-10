@@ -22,7 +22,7 @@ def test_async_same_results_and_successive_loops(fb, config):
     pool = fb.Pool(config(pool_size=2))
 
     async def run():
-        await pool.warmup()
+        await pool.warmup_async()
         assert await pool.fetch_val_async("SELECT AMOUNT FROM FBFAST_TYPES WHERE ID=?", [1]) == Decimal("-12345678.9012")
         assert await pool.fetch_one_async("SELECT ID FROM FBFAST_TYPES WHERE ID=?", [77]) is None
         assert await pool.fetch_all_async("SELECT ID FROM FBFAST_TYPES ORDER BY ID", as_dict=True) == [{"ID": 1}, {"ID": 2}]
@@ -37,7 +37,7 @@ def test_async_same_results_and_successive_loops(fb, config):
         asyncio.run(run())
         assert pool.stats()["connections_created"] == 2
     finally:
-        asyncio.run(pool.close())
+        asyncio.run(pool.aclose())
     assert pool.stats()["closed"] == 2
 
 
@@ -111,7 +111,8 @@ def test_async_cancel_during_python_materialization(fb, config, monkeypatch):
             request = asyncio.create_task(pool.fetch_all_async(
                 "WITH RECURSIVE N(I) AS (SELECT 1 FROM RDB$DATABASE UNION ALL SELECT I+1 FROM N WHERE I<1000) SELECT CAST(I AS DECIMAL(18,2)) FROM N", timeout=None))
             await until(lambda: len(calls) >= 5)
-            assert pool.stats()["idle"] == 1
+            # Conversion runs after the reply; deferred cleanup frees the slot meanwhile.
+            await until(lambda: pool.stats()["idle"] == 1)
             request.cancel()
             with pytest.raises(asyncio.CancelledError):
                 await request
@@ -138,7 +139,7 @@ def test_async_deadline_includes_python_conversion(fb, config, monkeypatch):
                 await pool.fetch_val_async("SELECT AMOUNT FROM FBFAST_TYPES WHERE ID=1", timeout=0.05)
             assert error.value.phase == "python_conversion"
             assert pool.stats()["timeouts"] == 1
-            assert pool.stats()["idle"] == 1
+            await until(lambda: pool.stats()["idle"] == 1)
     asyncio.run(run())
 
 
@@ -188,7 +189,7 @@ def test_async_heartbeat_during_million_tuple_materialization(fb, config, record
 
 def test_closed_loop_cancels_native_job_without_late_callback(fb, config):
     pool = fb.Pool(config(pool_size=1))
-    pool.warmup_sync()
+    pool.warmup()
     loop = asyncio.new_event_loop()
     late = []
     original = loop.call_soon_threadsafe
@@ -217,4 +218,4 @@ def test_closed_loop_cancels_native_job_without_late_callback(fb, config):
         assert not late
     finally:
         del request
-        pool.close_sync()
+        pool.close()

@@ -167,13 +167,15 @@ def test_unavailable_or_disagreeing_python_zone_rules_fail_and_json_still_works(
         assert caught.value.phase == "python_conversion"
         assert not caught.value.cleanup_errors
         assert json.loads(pool.fetch_json(sql))[0]["STAMP"] == {"utc": CASES[1][0], "zone": CASES[1][1]}
-        assert pool.fetch_val("SELECT COUNT(*) FROM MON$TRANSACTIONS") == 1
+        # Only this query's own transaction is open on the reused attachment.
+        assert pool.fetch_val("SELECT COUNT(*) FROM MON$TRANSACTIONS "
+                              "WHERE MON$ATTACHMENT_ID = CURRENT_CONNECTION") == 1
 
 
 def test_zoned_async_snapshot_and_stream(fb, config):
     async def run():
         async with fb.Pool(config(pool_size=1, batch_bytes=32)) as pool:
-            async with pool.snapshot_async() as session:
+            async with pool.snapshot() as session:
                 check(fb, await session.fetch_all_async(SQL))
                 async with session.stream_async(SQL, batch_rows=2) as stream:
                     rows = [row async for batch in stream for row in batch]

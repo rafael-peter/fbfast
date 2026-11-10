@@ -129,20 +129,20 @@ def test_arrow_c_stream_early_release_snapshot_and_context_cleanup(fb, config, c
 
 def test_arrow_empty_and_batches_async_snapshot_named_pool(fb, config):
     async def run():
-        pool = await fb.init_pool(config(pool_size=1, max_result_rows=1), name="arrow-stream")
+        pool = await fb.init_pool_async(config(pool_size=1, max_result_rows=1), name="arrow-stream")
         try:
             async with fb.stream_arrow_async(ROWS, batch_rows=100, pool="arrow-stream") as stream:
                 assert isinstance(stream, fb.AsyncArrowStream)
                 assert stream.schema.names == ["I"]
                 batches = [batch async for batch in stream]
             assert sum(batch.num_rows for batch in batches) == 1000
-            async with pool.snapshot_async() as session:
+            async with pool.snapshot() as session:
                 async with session.stream_arrow_async("SELECT ID FROM FBFAST_TYPES WHERE 1=0") as stream:
                     assert pa.schema(stream.schema).field(0).type == pa.int32()
                     assert [batch async for batch in stream] == []
                 assert await session.fetch_val_async("SELECT 7 FROM RDB$DATABASE") == 7
         finally:
-            await fb.close_pool("arrow-stream")
+            await fb.close_pool_async("arrow-stream")
         assert pa.record_batch(batches[-1])[0][-1].as_py() == 1000
     asyncio.run(run())
 

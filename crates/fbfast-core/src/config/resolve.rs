@@ -127,6 +127,13 @@ impl Config {
             )?,
             trim_char: r.boolean("trim_char", false)?,
             fallback_charset: r.optional_text("fallback_charset")?,
+            snapshot_timeout: r.optional_seconds("snapshot_timeout", 300.0)?,
+            max_inline_blob_size: r
+                .optional_range("max_inline_blob_size", 0, 65_535)?
+                .map(|size| size as u32),
+            blob_cache_size: r.optional_range("blob_cache_size", 0, u32::MAX as u64)?,
+            diagnostics: r.boolean("diagnostics", false)?,
+            ready_transaction_timeout: r.optional_seconds("ready_transaction_timeout", 2.0)?,
         };
         r.finish()?;
         if config.min_idle > config.pool_size {
@@ -193,4 +200,9 @@ const FIELDS: &[&str] = &[
     "statement_cache_bytes",
     "trim_char",
     "fallback_charset",
+    "snapshot_timeout",
+    "max_inline_blob_size",
+    "blob_cache_size",
+    "diagnostics",
+    "ready_transaction_timeout",
 ];
