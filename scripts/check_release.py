@@ -14,7 +14,7 @@ from zipfile import ZipFile
 ROOT = Path(__file__).resolve().parents[1]
 TARGETS = {"aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-pc-windows-msvc",
            "aarch64-unknown-linux-gnu", "x86_64-unknown-linux-gnu"}
-PYTHONS = {"3.11", "3.12", "3.13", "3.14"}
+PYTHONS = {"3.11", "3.12", "3.13", "3.14", "3.15"}
 
 
 def main():

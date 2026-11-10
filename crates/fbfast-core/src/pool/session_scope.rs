@@ -144,7 +144,7 @@ impl Scope {
             .is_err()
         {
             return Err(Error::new(
-                ErrorKind::PoolBusy,
+                ErrorKind::ConcurrentUse,
                 "snapshot",
                 "Snapshot already has an active operation or open stream",
             ));

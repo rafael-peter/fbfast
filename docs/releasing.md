@@ -5,7 +5,7 @@ cliente Firebird e recursos necessários; o consumidor instala com `uv add fbfas
 ou `pip install fbfast`, sem compilar Rust/C++ ou instalar Firebird localmente.
 Instalação por Git/sdist continua exigindo toolchain e SDK durante o build.
 
-Matriz configurada, CPython 3.11, 3.12, 3.13 e 3.14 **com GIL**:
+Matriz configurada, CPython 3.11, 3.12, 3.13, 3.14 e 3.15 **com GIL**:
 
 | SO | Arquitetura | Runner/base |
 |---|---|---|
@@ -15,7 +15,7 @@ Matriz configurada, CPython 3.11, 3.12, 3.13 e 3.14 **com GIL**:
 | Linux glibc | aarch64 | manylinux 2.28 em `ubuntu-24.04-arm` |
 | Windows | x86_64 | `windows-2022`, MSVC |
 
-São 20 wheels e um sdist. Linux musl/Alpine, Windows arm64, Python free-threaded
+São 25 wheels e um sdist. Linux musl/Alpine, Windows arm64, Python free-threaded
 e versões fora da matriz não são anunciados como suportados.
 
 `build-wheels.yml` roda em pull requests, pushes para `main`, manualmente e como

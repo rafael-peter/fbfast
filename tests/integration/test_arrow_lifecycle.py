@@ -17,22 +17,22 @@ def test_analytical_sync_async_snapshot_named_pool_and_params(fb, config, consum
     with fb.Pool(config(pool_size=1)) as pool:
         with pool.snapshot() as session:
             assert value(getattr(session, f"fetch_{consumer}")(sql, [31])) == 31
-    named = fb.init_pool_sync(config(pool_size=1), name="analytical")
+    named = fb.init_pool(config(pool_size=1), name="analytical")
     try:
         assert value(getattr(fb, f"fetch_{consumer}")(sql, [32], pool="analytical")) == 32
     finally:
-        fb.close_pool_sync("analytical")
+        fb.close_pool("analytical")
     assert named.stats()["closed"] == 1
 
     async def run():
         async with fb.Pool(config(pool_size=1)) as pool:
-            async with pool.snapshot_async() as session:
+            async with pool.snapshot() as session:
                 assert value(await getattr(session, f"fetch_{consumer}_async")(sql, [33])) == 33
-        await fb.init_pool(config(pool_size=1), name="analytical")
+        await fb.init_pool_async(config(pool_size=1), name="analytical")
         try:
             assert value(await getattr(fb, f"fetch_{consumer}_async")(sql, [34], pool="analytical")) == 34
         finally:
-            await fb.close_pool("analytical")
+            await fb.close_pool_async("analytical")
     asyncio.run(run())
 
 
@@ -74,7 +74,7 @@ def test_analytical_conversion_off_loop_keeps_snapshot_exclusive(fb, config, mon
 
     async def run():
         async with fb.Pool(config(pool_size=1)) as pool:
-            scope = pool.snapshot_async(timeout=None)
+            scope = pool.snapshot(timeout=None)
             session = await scope.__aenter__()
             fetch = getattr(session, f"fetch_{consumer}_async")
             task = asyncio.create_task(fetch("SELECT 1 AS I FROM RDB$DATABASE",
@@ -89,7 +89,7 @@ def test_analytical_conversion_off_loop_keeps_snapshot_exclusive(fb, config, mon
                     with pytest.raises(asyncio.CancelledError):
                         await task
                     with pytest.raises(fb.FbFastError):
-                        await scope.close()
+                        await scope.aclose()
                 else:
                     await asyncio.sleep(0.2)
             finally:
@@ -98,7 +98,7 @@ def test_analytical_conversion_off_loop_keeps_snapshot_exclusive(fb, config, mon
                 with pytest.raises(fb.QueryTimeoutError):
                     await task
                 with pytest.raises(fb.FbFastError):
-                    await scope.close()
+                    await scope.aclose()
             assert await pool.fetch_val_async("SELECT 3 FROM RDB$DATABASE") == 3
     asyncio.run(run())
 

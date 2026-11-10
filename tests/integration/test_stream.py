@@ -39,7 +39,7 @@ def test_stream_is_lazy_typed_batched_and_owns_results_after_close(fb, config):
         assert list(batches) == []
     with pytest.raises(RuntimeError):
         stream.__enter__()
-    pool.close_sync()
+    pool.close()
     assert retained[0][0] == (1,)
 
 
@@ -112,7 +112,7 @@ def test_async_context_iteration_and_cache_clear_waits_for_stream(fb, config):
         async with fb.Pool(config(pool_size=1)) as pool:
             async with pool.stream_async(MANY, batch_rows=10, as_dict=True) as batches:
                 assert await anext(batches) == [{"I": i} for i in range(1, 11)]
-                clearing = asyncio.create_task(pool.clear_statement_cache())
+                clearing = asyncio.create_task(pool.clear_statement_cache_async())
                 await auntil(lambda: pool.stats()["waiting"] == 1)
                 assert not clearing.done()
             await clearing
@@ -204,7 +204,7 @@ def test_pool_close_drains_stream_waiting_for_demand(fb, config):
     pool = fb.Pool(config(pool_size=1, stream_idle_timeout=None, query_timeout=None))
     stream = pool.stream(MANY)
     stream.__enter__()
-    pool.close_sync()
+    pool.close()
     assert pool.stats()["closed"] == 1
     with pytest.raises(fb.PoolClosedError):
         stream.close()

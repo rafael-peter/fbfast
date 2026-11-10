@@ -32,9 +32,11 @@ extern "C" uint32_t fbfast_control_end(void* handle, uint64_t generation, FbErro
 extern "C" uint32_t fbfast_control_raise(void* handle, uint64_t generation, FbError* error) noexcept {
     auto& control = **static_cast<ControlRef*>(handle);
     std::memset(error, 0, sizeof(*error));
-    // A stale command never touches an attachment or the next operation.
+    // A stale command never touches an attachment or the next operation. A raise
+    // may repeat for the same generation: one that arrives before the statement
+    // starts executing on the server is a no-op there.
     std::lock_guard<std::mutex> lock(control.gate);
-    if (!control.owner || control.generation != generation || control.raised) return 0;
+    if (!control.owner || control.generation != generation) return 0;
     control.raised = true;
     guarded(control.owner, error, [&](auto* status) {
         control.owner->attachment->cancelOperation(status, fb_cancel_raise);

@@ -30,23 +30,23 @@ def test_missing_registry_never_opens_implicitly(fb, config):
                           fb.explain_async):
                 with pytest.raises(fb.PoolNotInitializedError):
                     await query(SQL, [1], pool=name)
-            await fb.close_pool(name)
+            await fb.close_pool_async(name)
         asyncio.run(run())
-        fb.close_pool_sync(name)
+        fb.close_pool(name)
     for name in ("", "  ", None, 2):
         with pytest.raises(fb.ConfigurationError):
-            fb.init_pool_sync(config(), name=name)
+            fb.init_pool(config(), name=name)
 
 
 def test_sync_module_delegates_share_registered_pool_and_limits(fb, config):
-    pool = fb.init_pool_sync(config(pool_size=1, min_idle=0))
+    pool = fb.init_pool(config(pool_size=1, min_idle=0))
     other = None
     try:
         assert fb.get_pool() is pool and pool.stats()["connections_created"] == 1
-        other = fb.init_pool_sync(config(pool_size=1, max_result_rows=1), name="bi")
+        other = fb.init_pool(config(pool_size=1, max_result_rows=1), name="bi")
         assert fb.get_pool("bi") is other
         with pytest.raises(fb.PoolAlreadyInitializedError):
-            fb.init_pool_sync(config(), name="bi")
+            fb.init_pool(config(), name="bi")
         assert fb.fetch_all(SQL, [1]) == [(1,), (2,)]
         assert fb.fetch_one(SQL, [2], as_dict=True) == {"ID": 2}
         assert fb.fetch_val(SQL, [2]) == 2
@@ -58,22 +58,22 @@ def test_sync_module_delegates_share_registered_pool_and_limits(fb, config):
         assert fb.fetch_val(SQL, [2], pool="bi") == 2
         assert pool.stats()["connections_created"] == 1
         assert pool.stats()["statement_hits"] >= 4
-        fb.close_pool_sync("bi")
+        fb.close_pool("bi")
         assert fb.get_pool() is pool
         assert fb.fetch_val(SQL, [1]) == 1
     finally:
-        fb.close_pool_sync("bi")
-        fb.close_pool_sync()
+        fb.close_pool("bi")
+        fb.close_pool()
     assert pool.stats()["closed"] == 1
     if other is not None:
         assert other.stats()["closed"] == 1
     with pytest.raises(fb.PoolNotInitializedError):
         fb.get_pool()
-    fb.close_pool_sync()
+    fb.close_pool()
 
 
 def test_async_delegates_and_registry_cross_event_loops(fb, config):
-    pool = asyncio.run(fb.init_pool(config(pool_size=1, min_idle=0)))
+    pool = asyncio.run(fb.init_pool_async(config(pool_size=1, min_idle=0)))
 
     async def query():
         assert fb.get_pool() is pool
@@ -84,16 +84,16 @@ def test_async_delegates_and_registry_cross_event_loops(fb, config):
         async with fb.stream_async(SQL, [1], batch_rows=1) as batches:
             assert [batch async for batch in batches] == [[(1,)], [(2,)]]
         with pytest.raises(fb.PoolAlreadyInitializedError):
-            await fb.init_pool(config())
+            await fb.init_pool_async(config())
     try:
         asyncio.run(query())
         asyncio.run(query())
         assert pool.stats()["connections_created"] == 1
     finally:
-        fb.close_pool_sync()
-    pool = fb.init_pool_sync(config(pool_size=1))
-    asyncio.run(fb.close_pool())
-    asyncio.run(fb.close_pool())
+        fb.close_pool()
+    pool = fb.init_pool(config(pool_size=1))
+    asyncio.run(fb.close_pool_async())
+    asyncio.run(fb.close_pool_async())
     assert pool.stats()["closed"] == 1
 
 
@@ -104,7 +104,7 @@ def test_racing_initializers_have_exactly_one_winner(fb, config):
     def initialize(_):
         barrier.wait(timeout=5)
         try:
-            return fb.init_pool_sync(cfg, name="race")
+            return fb.init_pool(cfg, name="race")
         except fb.PoolAlreadyInitializedError:
             return None
     try:
@@ -115,12 +115,12 @@ def test_racing_initializers_have_exactly_one_winner(fb, config):
         assert fb.get_pool("race") is winners[0]
         assert winners[0].stats()["connections_created"] == 1
     finally:
-        fb.close_pool_sync("race")
+        fb.close_pool("race")
 
 
 def test_close_during_open_cannot_publish_or_remove_replacement(fb, config, monkeypatch):
     opened, release = Event(), Event()
-    original = fb.Pool.warmup_sync
+    original = fb.Pool.warmup
     first = []
 
     def warmup(pool):
@@ -129,18 +129,18 @@ def test_close_during_open_cannot_publish_or_remove_replacement(fb, config, monk
             first.append(pool)
             opened.set()
             assert release.wait(5)
-    monkeypatch.setattr(fb.Pool, "warmup_sync", warmup)
+    monkeypatch.setattr(fb.Pool, "warmup", warmup)
     with ThreadPoolExecutor(max_workers=1) as threads:
-        pending = threads.submit(fb.init_pool_sync, config(pool_size=1), name="opening")
+        pending = threads.submit(fb.init_pool, config(pool_size=1), name="opening")
         try:
             assert opened.wait(3)
             with pytest.raises(fb.PoolNotInitializedError):
                 fb.get_pool("opening")
             with pytest.raises(fb.PoolAlreadyInitializedError):
-                asyncio.run(fb.init_pool(config(), name="opening"))
-            fb.close_pool_sync("opening")
+                asyncio.run(fb.init_pool_async(config(), name="opening"))
+            fb.close_pool("opening")
             assert first[0].stats()["closed"] == 1
-            replacement = fb.init_pool_sync(config(pool_size=1), name="opening")
+            replacement = fb.init_pool(config(pool_size=1), name="opening")
             release.set()
             with pytest.raises(fb.PoolClosedError):
                 pending.result(timeout=3)
@@ -148,7 +148,7 @@ def test_close_during_open_cannot_publish_or_remove_replacement(fb, config, monk
             assert fb.fetch_val(SQL, [2], pool="opening") == 2
         finally:
             release.set()
-            fb.close_pool_sync("opening")
+            fb.close_pool("opening")
 
 
 @pytest.mark.parametrize("asynchronous", [False, True])
@@ -156,14 +156,14 @@ def test_failed_warmup_preserves_error_and_releases_name(fb, config, asynchronou
     bad = config(role="NOT_GRANTED", pool_size=1)
     with pytest.raises(fb.RoleNotActiveError) as failure:
         if asynchronous:
-            asyncio.run(fb.init_pool(bad, name="failure"))
+            asyncio.run(fb.init_pool_async(bad, name="failure"))
         else:
-            fb.init_pool_sync(bad, name="failure")
+            fb.init_pool(bad, name="failure")
     assert failure.value.phase == "attach"
     with pytest.raises(fb.PoolNotInitializedError):
         fb.get_pool("failure")
     try:
-        pool = fb.init_pool_sync(config(pool_size=1), name="failure")
+        pool = fb.init_pool(config(pool_size=1), name="failure")
         assert pool.fetch_val(SQL, [2]) == 2
     finally:
-        fb.close_pool_sync("failure")
+        fb.close_pool("failure")

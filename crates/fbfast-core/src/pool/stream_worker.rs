@@ -38,6 +38,16 @@ impl Default for Demand {
 pub(super) struct Producer {
     pub sender: flume::Sender<Event>,
     pub demand: Arc<Demand>,
+    /// Wakes a blocked synchronous consumer after every event.
+    pub signal: Arc<super::Signal>,
+}
+
+impl Producer {
+    fn send(&self, event: Event) -> Result<(), Error> {
+        self.sender.try_send(event).map_err(|_| consumer_gone())?;
+        self.signal.notify();
+        Ok(())
+    }
 }
 pub(super) struct Consumer<'a> {
     pub producer: &'a Producer,
@@ -51,12 +61,10 @@ pub(super) struct Consumer<'a> {
 }
 
 impl Consumer<'_> {
-    fn before_fetch(&mut self) -> Result<bool, Error> {
+    /// Blocks (bounded, cancellation-aware) until the consumer granted credit.
+    fn wait_for_demand(&mut self) -> Result<bool, Error> {
         if !self.opened {
-            self.producer
-                .sender
-                .try_send(Event::Opened(None))
-                .map_err(|_| consumer_gone())?;
+            self.producer.send(Event::Opened(None))?;
             self.opened = true;
         }
         let idle_since = Instant::now();
@@ -119,10 +127,7 @@ impl Consumer<'_> {
         }
     }
     fn send(&mut self, event: Event, count: usize, bytes: usize) -> Result<bool, Error> {
-        self.producer
-            .sender
-            .try_send(event)
-            .map_err(|_| consumer_gone())?;
+        self.producer.send(event)?;
         self.produced += 1;
         if let Some(inner) = self.inner.upgrade() {
             let mut state = inner.state.lock().unwrap_or_else(|e| e.into_inner());
@@ -132,41 +137,42 @@ impl Consumer<'_> {
         Ok(true)
     }
 }
-impl BatchConsumer for Consumer<'_> {
-    fn before_fetch(&mut self) -> Result<bool, Error> {
-        self.before_fetch()
-    }
-    fn batch(&mut self, rows: Rows) -> Result<bool, Error> {
-        let (count, bytes) = (rows.count, rows.bytes);
-        self.send(Event::Batch(rows), count, bytes)
+/// A batch the stream worker forwards, with its (rows, bytes) for statistics.
+pub(super) trait Streamed {
+    fn into_event(self) -> (Event, usize, usize);
+}
+impl Streamed for Rows {
+    fn into_event(self) -> (Event, usize, usize) {
+        let (count, bytes) = (self.count, self.bytes);
+        (Event::Batch(self), count, bytes)
     }
 }
-impl BatchConsumer<JsonOutput> for Consumer<'_> {
-    fn before_fetch(&mut self) -> Result<bool, Error> {
-        self.before_fetch()
+impl Streamed for JsonOutput {
+    fn into_event(self) -> (Event, usize, usize) {
+        let (count, bytes) = (self.rows, self.data.len());
+        (Event::Json(self), count, bytes)
     }
-    fn batch(&mut self, json: JsonOutput) -> Result<bool, Error> {
-        let (count, bytes) = (json.rows, json.data.len());
-        self.send(Event::Json(json), count, bytes)
+}
+impl Streamed for arrow_array::RecordBatch {
+    fn into_event(self) -> (Event, usize, usize) {
+        let (count, bytes) = (self.num_rows(), self.get_array_memory_size());
+        (Event::Arrow(self), count, bytes)
+    }
+}
+impl<B: Streamed> BatchConsumer<B> for Consumer<'_> {
+    fn before_fetch(&mut self) -> Result<bool, Error> {
+        self.wait_for_demand()
+    }
+    fn batch(&mut self, batch: B) -> Result<bool, Error> {
+        let (event, count, bytes) = batch.into_event();
+        self.send(event, count, bytes)
     }
 }
 impl crate::execution::ArrowConsumer for Consumer<'_> {
     fn schema(&mut self, schema: arrow_schema::SchemaRef) -> Result<(), Error> {
-        self.producer
-            .sender
-            .try_send(Event::Opened(Some(schema)))
-            .map_err(|_| consumer_gone())?;
+        self.producer.send(Event::Opened(Some(schema)))?;
         self.opened = true;
         Ok(())
-    }
-}
-impl BatchConsumer<arrow_array::RecordBatch> for Consumer<'_> {
-    fn before_fetch(&mut self) -> Result<bool, Error> {
-        self.before_fetch()
-    }
-    fn batch(&mut self, batch: arrow_array::RecordBatch) -> Result<bool, Error> {
-        let (rows, bytes) = (batch.num_rows(), batch.get_array_memory_size());
-        self.send(Event::Arrow(batch), rows, bytes)
     }
 }
 fn consumer_gone() -> Error {

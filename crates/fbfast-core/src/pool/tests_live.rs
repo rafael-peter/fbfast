@@ -1,3 +1,4 @@
+use super::Query;
 use super::{
     controller::Controller,
     state::{Progress, Work},
@@ -118,13 +119,13 @@ fn worker_panic_cleans_up_before_replacing_slot() {
         }
     }
     let mut next = pool
-        .submit_rows(
+        .submit(Query::rows(
             "SELECT 1 FROM RDB$DATABASE".into(),
             vec![],
             true,
             false,
             Some(3.0),
-        )
+        ))
         .unwrap();
     loop {
         if let Some(output) = next.wait_slice(Duration::from_millis(25)).unwrap() {

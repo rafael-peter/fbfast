@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 //! Exercise the same Arrow ownership boundary used by the Python capsule owner.
 use arrow_array::{
-    ffi_stream::{ArrowArrayStreamReader, FFI_ArrowArrayStream},
+    ffi_stream::{FFI_ArrowArrayStream, RecordBatchStreamReader},
     Array, Int32Array, RecordBatch, RecordBatchReader,
 };
 use arrow_schema::{ArrowError, SchemaRef};
@@ -57,7 +57,7 @@ fn unconsumed_export_releases_its_reader_once() {
 fn imported_batch_shares_buffers_and_outlives_stream_without_double_release() {
     let releases = Arc::new(AtomicUsize::new(0));
     let (stream, address) = export(&releases);
-    let mut consumer = ArrowArrayStreamReader::try_new(stream).unwrap();
+    let mut consumer = RecordBatchStreamReader::try_new(stream).unwrap();
     let batch = consumer.next().unwrap().unwrap();
     assert!(consumer.next().is_none());
     assert_eq!(releases.load(Ordering::SeqCst), 0);
@@ -78,7 +78,7 @@ fn imported_batch_shares_buffers_and_outlives_stream_without_double_release() {
 
 #[test]
 fn empty_or_released_stream_is_rejected_before_callback_use() {
-    assert!(ArrowArrayStreamReader::try_new(FFI_ArrowArrayStream::empty()).is_err());
+    assert!(RecordBatchStreamReader::try_new(FFI_ArrowArrayStream::empty()).is_err());
 }
 
 #[test]

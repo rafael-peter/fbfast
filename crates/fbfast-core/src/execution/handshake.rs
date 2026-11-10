@@ -20,7 +20,7 @@ WHERE A.MON$ATTACHMENT_ID = CURRENT_CONNECTION
 "#;
 
 /// Observed capabilities, not assumptions from the requested DPB settings.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct SessionInfo {
     pub server_version: String,
     pub role: String,
@@ -29,7 +29,16 @@ pub struct SessionInfo {
     pub wire_encrypted: bool,
     pub wire_compressed: bool,
     pub network_protocol: String,
+    /// Negotiated wire protocol (19 = Firebird 5.0.3+ with inline BLOBs).
+    pub protocol_version: u32,
+    /// Small BLOBs arrive with their row instead of costing extra round trips.
+    pub inline_blobs: bool,
+    pub max_inline_blob_size: u32,
+    pub blob_cache_size: u64,
 }
+
+/// Inline BLOB transfer was introduced with wire protocol 19 (Firebird 5.0.3).
+const INLINE_BLOB_PROTOCOL: u32 = 19;
 
 impl ExecutionConnection {
     pub(crate) fn verify_session(
@@ -46,6 +55,7 @@ impl ExecutionConnection {
             &QueryOptions {
                 first: true,
                 unique_names: false,
+                prevalidated: false,
                 deadline: Some(deadline),
                 cancellation: &Cancellation::default(),
                 cleaning: &|| Ok(false),
@@ -56,7 +66,7 @@ impl ExecutionConnection {
         let row = result
             .row(0)
             .ok_or_else(|| mismatch("Server did not return session identity"))?;
-        let info = SessionInfo {
+        let mut info = SessionInfo {
             server_version: text(row, 0)?,
             role: text(row, 1)?,
             charset: text(row, 2)?,
@@ -64,7 +74,12 @@ impl ExecutionConnection {
             wire_encrypted: boolean(row, 6)?,
             wire_compressed: boolean(row, 7)?,
             network_protocol: text(row, 8)?,
+            protocol_version: 0,
+            inline_blobs: false,
+            max_inline_blob_size: 0,
+            blob_cache_size: 0,
         };
+        self.read_protocol(&mut info)?;
         if !info.server_version.starts_with("5.0.") {
             return Err(Error::new(
                 ErrorKind::UnsupportedServer,
@@ -115,6 +130,25 @@ impl ExecutionConnection {
         // Compression is negotiated with the server. Record the actual outcome;
         // enabling the client option alone does not prove it is in use.
         Ok(info)
+    }
+}
+
+impl ExecutionConnection {
+    /// Local Remote-provider information; no server round trip.
+    fn read_protocol(&mut self, info: &mut SessionInfo) -> Result<(), Error> {
+        use fbfast_native::info_item as item;
+        let values = self.native.info(&[
+            item::PROTOCOL_VERSION,
+            item::MAX_INLINE_BLOB_SIZE,
+            item::MAX_BLOB_CACHE_SIZE,
+        ])?;
+        // The protocol number carries FB_PROTOCOL_FLAG (0x8000) on the wire.
+        info.protocol_version = values[0].map_or(0, |value| (value & 0x7fff) as u32);
+        info.max_inline_blob_size = values[1].unwrap_or(0).min(u32::MAX as u64) as u32;
+        info.blob_cache_size = values[2].unwrap_or(0);
+        info.inline_blobs =
+            info.protocol_version >= INLINE_BLOB_PROTOCOL && info.max_inline_blob_size > 0;
+        Ok(())
     }
 }
 

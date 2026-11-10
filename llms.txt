@@ -1,0 +1,43 @@
+# fbfast
+
+> Read-only Firebird 5 client for Python (CPython 3.11-3.15) with a Rust core
+> and the official Firebird client bundled in the wheel. One API, sync and
+> asyncio, returns tuples, dicts, validated Pydantic models, native JSON bytes,
+> pyarrow Tables or Polars DataFrames, materialized or streamed.
+
+Key rules: only single SELECT/WITH statements in READ ONLY transactions (not a
+sandbox: use a minimal database role); positional `?` parameters whose Python
+type matches the SQL type; methods without a suffix block and `_async` methods
+(plus `aclose`) are coroutines; always use context managers for pools,
+snapshots, streams and query groups; UTF8 connections only; one operation at a
+time per snapshot or stream; create pools after `fork()`. Reach a named pool
+with `fbfast.get_pool(name)`. The installed package carries the same rules
+offline in `fbfast/llms.txt`.
+
+## Docs
+
+- [README](https://github.com/rafael-peter/fbfast/blob/v0.3.0/README.md): overview, installation, choosing a result type, async services, streams, Arrow/Polars, snapshots
+- [Rules for code assistants](https://github.com/rafael-peter/fbfast/blob/v0.3.0/python/fbfast/llms.txt): hard rules, goal-to-method table, parameter types, defaults, errors and pitfalls in one page
+- [Recipes](https://github.com/rafael-peter/fbfast/blob/v0.3.0/docs/guide/recipes.md): FastAPI with a named pool, NDJSON over HTTP, Polars/Parquet ETL, Arrow streaming, snapshot reports, Pydantic models, concurrent queries
+- [Errors](https://github.com/rafael-peter/fbfast/blob/v0.3.0/docs/guide/errors.md): exception hierarchy, phases, when each error happens and whether retrying helps
+- [Troubleshooting](https://github.com/rafael-peter/fbfast/blob/v0.3.0/docs/guide/troubleshooting.md): wire encryption, roles, charsets, parameter types, slow BLOBs over a WAN, Decimal256 in Polars, timeouts, fork safety
+- [Configuration](https://github.com/rafael-peter/fbfast/blob/v0.3.0/docs/guide/configuration.md): every FirebirdConfig option with its FB_* variable and default
+- [Performance](https://github.com/rafael-peter/fbfast/blob/v0.3.0/docs/guide/performance.md): latency, round trips, BLOBs, compression and when to use each output
+- [API reference](https://github.com/rafael-peter/fbfast/blob/v0.3.0/docs/guide/api.md): signatures and docstrings of the public API
+
+## Examples
+
+- [basic_query.py](https://github.com/rafael-peter/fbfast/blob/v0.3.0/examples/basic_query.py): configuration from FB_* variables, fetch_val/fetch_one/fetch_all, explain, errors, stats and diagnostics
+- [typed_models.py](https://github.com/rafael-peter/fbfast/blob/v0.3.0/examples/typed_models.py): Pydantic models with upper-case names or validation aliases, sync and async
+- [concurrent_queries.py](https://github.com/rafael-peter/fbfast/blob/v0.3.0/examples/concurrent_queries.py): Query objects with run_all, run_many and their async forms
+- [snapshot_report.py](https://github.com/rafael-peter/fbfast/blob/v0.3.0/examples/snapshot_report.py): consistent reads with pool.snapshot(), including a stream
+- [json_stream.py](https://github.com/rafael-peter/fbfast/blob/v0.3.0/examples/json_stream.py): fetch_json and NDJSON streaming, sync and async
+- [polars_etl.py](https://github.com/rafael-peter/fbfast/blob/v0.3.0/examples/polars_etl.py): fetch_polars to Parquet, Decimal256 handling, Arrow stream to Parquet
+
+## Optional
+
+- [Full documentation in one file](https://github.com/rafael-peter/fbfast/blob/v0.3.0/llms-full.txt): this index with the rules and guides inlined
+- [Security model](https://github.com/rafael-peter/fbfast/blob/v0.3.0/docs/security.md): read-only gates, privileges, result limits, credentials, Firebird versions
+- [Release notes](https://github.com/rafael-peter/fbfast/tree/v0.3.0/docs/releases): changes and migration tables per version
+- [Development](https://github.com/rafael-peter/fbfast/blob/v0.3.0/docs/development.md): building from source, checks and the disposable test fixture
+- [Contributor and agent rules](https://github.com/rafael-peter/fbfast/blob/v0.3.0/AGENTS.md): verification commands and repository conventions

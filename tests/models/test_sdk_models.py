@@ -51,7 +51,7 @@ def test_sdk_async(sdk_config):
             rows = await fbfast.fetch_all_async(SQL, pool='model-sdk', model=Row)
             assert [row.id for row in rows] == [1, 2]
             assert await fbfast.fetch_one_async(SQL, pool='model-sdk', model=Row) == rows[0]
-            async with fbfast.get_pool('model-sdk').snapshot_async() as snapshot:
+            async with fbfast.get_pool('model-sdk').snapshot() as snapshot:
                 assert await snapshot.fetch_all_async(SQL, model=Row) == rows
                 assert await snapshot.fetch_one_async(SQL, model=Row) == rows[0]
         finally:

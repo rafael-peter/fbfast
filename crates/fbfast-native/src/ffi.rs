@@ -38,6 +38,8 @@ pub struct RawAttach {
     pub app_name: *const c_char,
     pub config: *const c_char,
     pub connect_seconds: u32,
+    pub max_inline_blob_size: i64,
+    pub max_blob_cache_size: i64,
 }
 
 #[repr(C)]
@@ -118,7 +120,15 @@ unsafe extern "C" {
     );
     pub fn fbfast_rollback(handle: *mut c_void, error: *mut RawStatus);
     pub fn fbfast_reset(handle: *mut c_void, error: *mut RawStatus);
+    pub fn fbfast_reset_restart(handle: *mut c_void, error: *mut RawStatus) -> u32;
     pub fn fbfast_ping(handle: *mut c_void, error: *mut RawStatus);
+    pub fn fbfast_attachment_info(
+        handle: *mut c_void,
+        items: *const u8,
+        count: u32,
+        values: *mut u64,
+        error: *mut RawStatus,
+    );
     pub fn fbfast_prepare(handle: *mut c_void, sql: *const c_char, error: *mut RawStatus) -> u64;
     pub fn fbfast_free_statement(handle: *mut c_void, id: u64, error: *mut RawStatus);
     pub fn fbfast_message_length(

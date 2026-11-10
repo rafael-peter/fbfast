@@ -1,8 +1,9 @@
 mod wait;
 use super::{
     fork_error,
+    pending::Completion,
     stream_worker::{Demand, Event},
-    DeliveryBudget, Output, Pending,
+    DeliveryBudget, Pending,
 };
 use crate::{
     error::{Error, ErrorKind},
@@ -34,20 +35,6 @@ pub enum StreamItem {
     Json(crate::sinks::json::JsonOutput),
     End,
 }
-pub(super) enum StreamFormat {
-    Rows(bool),
-    Json(
-        (
-            crate::sinks::json::JsonOptions,
-            crate::sinks::json::JsonFormat,
-        ),
-    ),
-    Arrow,
-}
-struct Completion {
-    pending: Pending,
-    result: Option<Result<(), Error>>,
-}
 struct Shared {
     receiver: flume::Receiver<Event>,
     demand: Arc<Demand>,
@@ -55,6 +42,8 @@ struct Shared {
     phase: Mutex<Phase>,
     busy: AtomicBool,
     schema: Mutex<Option<arrow_schema::SchemaRef>>,
+    /// Raised by the worker on every event and on its final reply.
+    signal: Arc<super::Signal>,
 }
 
 pub struct Stream {
@@ -80,7 +69,7 @@ impl Stream {
             .load(Ordering::Acquire)
         {
             return Err(Error::new(
-                ErrorKind::PoolBusy,
+                ErrorKind::ConcurrentUse,
                 "stream",
                 "Stream already has an active consumer",
             ));
@@ -114,19 +103,18 @@ impl Stream {
         pending: Pending,
         receiver: flume::Receiver<Event>,
         demand: Arc<Demand>,
+        signal: Arc<super::Signal>,
     ) -> Self {
         Self {
             pid: std::process::id(),
             shared: Some(Arc::new(Shared {
                 receiver,
                 demand,
-                completion: Mutex::new(Completion {
-                    pending,
-                    result: None,
-                }),
+                completion: Mutex::new(Completion::new(pending)),
                 phase: Mutex::new(Phase::New),
                 busy: AtomicBool::new(false),
                 schema: Mutex::new(None),
+                signal,
             })),
         }
     }
@@ -141,7 +129,7 @@ impl Stream {
             .is_err()
         {
             return Err(Error::new(
-                ErrorKind::PoolBusy,
+                ErrorKind::ConcurrentUse,
                 "stream",
                 "Stream already has an active consumer",
             ));
@@ -202,20 +190,10 @@ impl Shared {
         }
     }
     fn terminal(&self) -> Option<Result<(), Error>> {
-        let mut completion = self.completion.lock().unwrap_or_else(|e| e.into_inner());
-        if completion.result.is_none() {
-            completion.result = match completion.pending.try_result() {
-                Ok(None) => None,
-                Ok(Some(Output::Ready)) => Some(Ok(())),
-                Ok(Some(_)) => Some(Err(Error::new(
-                    ErrorKind::Query,
-                    "stream",
-                    "Unexpected stream completion",
-                ))),
-                Err(error) => Some(Err(error)),
-            };
-        }
-        completion.result.clone()
+        self.completion
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .poll("stream")
     }
 }
 

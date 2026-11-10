@@ -41,10 +41,10 @@ def test_snapshot_lazy_identity_and_independent_pool_queries(fb, config):
         assert session.fetch_all("SELECT ID FROM FBFAST_TYPES WHERE ID=?", [1], as_dict=True) == [{"ID": 1}]
         assert session.explain("SELECT ID FROM FBFAST_TYPES WHERE ID=?", [1])
     assert pool.stats()["leased"] == 0
-    snapshot.close_sync()
+    snapshot.close()
     with pytest.raises(RuntimeError):
         snapshot.__enter__()
-    pool.close_sync()
+    pool.close()
 
 
 def test_snapshot_repeats_data_after_concurrent_commit_and_stream_shares_it(fb, config):
@@ -85,7 +85,7 @@ def test_snapshot_idle_deadline_closes_without_another_query(fb, config):
         with pytest.raises(fb.QueryTimeoutError):
             scope.fetch_val(VALUE)
         with pytest.raises(fb.QueryTimeoutError):
-            scope.close_sync()
+            scope.close()
         assert pool.stats()["timeouts"] == 1
         assert pool.fetch_val(VALUE) == 10
 
@@ -116,7 +116,7 @@ def test_pool_close_drains_idle_snapshot(fb, config):
     pool = fb.Pool(config(pool_size=1, min_idle=0))
     scope = pool.snapshot(timeout=None)
     scope.__enter__()
-    pool.close_sync()
+    pool.close()
     assert pool.stats()["closed"] == 1
     with pytest.raises(fb.PoolClosedError):
         scope.fetch_val(VALUE)
@@ -125,7 +125,7 @@ def test_pool_close_drains_idle_snapshot(fb, config):
 def test_async_snapshot_queries_streams_and_consumer_error(fb, config):
     async def run():
         async with fb.Pool(config(pool_size=1, min_idle=0)) as pool:
-            async with pool.snapshot_async(timeout=None) as session:
+            async with pool.snapshot(timeout=None) as session:
                 assert await session.fetch_val_async(VALUE) == 10
                 assert (await session.fetch_one_async(IDENTITY))[2:] == (1, 1)
                 assert await session.explain_async("SELECT ID FROM FBFAST_TYPES WHERE ID=?", [1])
@@ -133,7 +133,7 @@ def test_async_snapshot_queries_streams_and_consumer_error(fb, config):
                     assert sum([len(batch) async for batch in batches]) == 103
                 assert await session.fetch_all_async("SELECT ID FROM FBFAST_TYPES WHERE ID=?", [1]) == [(1,)]
             with pytest.raises(ValueError, match="consumer"):
-                async with pool.snapshot_async():
+                async with pool.snapshot():
                     raise ValueError("consumer")
             assert await pool.fetch_val_async(VALUE) == 10
     asyncio.run(run())
@@ -142,7 +142,7 @@ def test_async_snapshot_queries_streams_and_consumer_error(fb, config):
 def test_async_snapshot_exclusive_query_cancellation_and_recovery(fb, config):
     async def run():
         async with fb.Pool(config(pool_size=1, min_idle=0)) as pool:
-            scope = pool.snapshot_async(timeout=None)
+            scope = pool.snapshot(timeout=None)
             session = await scope.__aenter__()
             active = asyncio.create_task(session.fetch_val_async(LONG, timeout=None))
             await asyncio.sleep(0.04)
@@ -152,6 +152,6 @@ def test_async_snapshot_exclusive_query_cancellation_and_recovery(fb, config):
             with pytest.raises(asyncio.CancelledError):
                 await active
             with pytest.raises(fb.FbFastError):
-                await scope.close()
+                await scope.aclose()
             assert await pool.fetch_val_async(VALUE) == 10
     asyncio.run(run())

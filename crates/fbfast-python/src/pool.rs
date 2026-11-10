@@ -1,8 +1,11 @@
 use crate::executor::Executor;
 use crate::pool_wait::{close, internal, wait};
-use crate::{config::PyConfig, errors::from_core, values::Converter};
-use fbfast_core::pool::{Output, Pool};
-use pyo3::{prelude::*, types::PyDict};
+use crate::{config::PyConfig, delivery::Form, errors::from_core, values::Converter};
+use fbfast_core::pool::{Output, Pool, StreamFormat, StreamQuery};
+use pyo3::{
+    prelude::*,
+    types::{PyDict, PyList},
+};
 use std::path::PathBuf;
 
 #[pyclass(name = "_Pool", module = "fbfast._native", frozen)]
@@ -74,7 +77,13 @@ impl PyPool {
         let params = Converter::new(py)?.params(params)?;
         let core = self
             .inner
-            .stream_json(sql, params, batch_rows, json, timeout)
+            .open_stream(StreamQuery {
+                sql,
+                params,
+                timeout,
+                batch_rows,
+                format: StreamFormat::Json(json.0, json.1),
+            })
             .map_err(from_core)?;
         Ok(crate::stream::PyStream::new(
             core,
@@ -199,28 +208,8 @@ impl PyPool {
         as_dict: bool,
         timeout: Option<f64>,
     ) -> PyResult<Py<PyAny>> {
-        let mut converter = Converter::new(py)?;
-        let params = converter.params(params)?;
-        let mut pending = self
-            .inner
-            .submit_rows(sql, params, first, as_dict, timeout)
-            .map_err(from_core)?;
-        let output = wait(py, &mut pending)?;
-        converter.set_budget(pending.delivery_budget().map_err(from_core)?);
-        converter.checkpoint()?;
-        let result = match output {
-            Output::Rows(rows) => {
-                if first {
-                    converter.row(&rows, 0, as_dict)
-                } else {
-                    converter.all(&rows, as_dict)
-                }
-            }
-            _ => Err(internal()),
-        }?;
-        converter.checkpoint()?;
-        pending.delivery_complete();
-        Ok(result)
+        let form = Form::Rows { first, as_dict };
+        crate::delivery::run(py, &self.inner, sql, params, timeout, form)
     }
 
     #[pyo3(signature = (sql, params=None, *, timeout=None))]
@@ -231,25 +220,7 @@ impl PyPool {
         params: Option<&Bound<'_, PyAny>>,
         timeout: Option<f64>,
     ) -> PyResult<Py<PyAny>> {
-        let mut converter = Converter::new(py)?;
-        let params = converter.params(params)?;
-        let mut pending = self
-            .inner
-            .submit_rows(sql, params, true, false, timeout)
-            .map_err(from_core)?;
-        let output = wait(py, &mut pending)?;
-        converter.set_budget(pending.delivery_budget().map_err(from_core)?);
-        converter.checkpoint()?;
-        let result = match output {
-            Output::Rows(rows) => rows
-                .row(0)
-                .and_then(|row| row.first())
-                .map_or_else(|| Ok(py.None()), |v| converter.value(v)),
-            _ => Err(internal()),
-        }?;
-        converter.checkpoint()?;
-        pending.delivery_complete();
-        Ok(result)
+        crate::delivery::run(py, &self.inner, sql, params, timeout, Form::Value)
     }
 
     #[pyo3(signature = (sql, params=None, *, timeout=None))]
@@ -259,23 +230,8 @@ impl PyPool {
         sql: String,
         params: Option<&Bound<'_, PyAny>>,
         timeout: Option<f64>,
-    ) -> PyResult<String> {
-        let mut converter = Converter::new(py)?;
-        let params = converter.params(params)?;
-        let mut pending = self
-            .inner
-            .submit_explain(sql, params, timeout)
-            .map_err(from_core)?;
-        let output = wait(py, &mut pending)?;
-        converter.set_budget(pending.delivery_budget().map_err(from_core)?);
-        converter.checkpoint()?;
-        match output {
-            Output::Plan(plan) => {
-                pending.delivery_complete();
-                Ok(plan)
-            }
-            _ => Err(internal()),
-        }
+    ) -> PyResult<Py<PyAny>> {
+        crate::delivery::run(py, &self.inner, sql, params, timeout, Form::Plan)
     }
 
     fn warmup_sync(&self, py: Python<'_>) -> PyResult<()> {
@@ -324,22 +280,33 @@ impl PyPool {
         crate::asyncio::clear_cache(py, &self.inner, &self.delivery, timeout)
     }
 
+    /// Runs independent queries with at most `concurrency` in flight.
+    #[pyo3(signature = (specs, *, concurrency, timeout=None))]
+    fn group(
+        &self,
+        py: Python<'_>,
+        specs: Vec<crate::group::Spec<'_>>,
+        concurrency: usize,
+        timeout: Option<f64>,
+    ) -> PyResult<crate::group::PyGroup> {
+        crate::group::PyGroup::new(py, &self.inner, specs, concurrency, timeout)
+    }
+
+    fn session_info(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        crate::introspection::session_info(py, self.inner.session_info().map_err(from_core)?)
+    }
+
+    fn diagnostics<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyList>> {
+        crate::introspection::diagnostics(py, self.inner.diagnostics().map_err(from_core)?)
+    }
+
     fn stats<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
-        let values =
-            serde_json::to_value(self.inner.stats().map_err(from_core)?).map_err(|_| internal())?;
-        let result = PyDict::new(py);
-        for (name, value) in values.as_object().ok_or_else(internal)? {
-            if let Some(value) = value.as_bool() {
-                result.set_item(name, value)?;
-            } else {
-                result.set_item(name, value.as_u64().ok_or_else(internal)?)?;
-            }
-        }
-        Ok(result)
+        crate::introspection::stats(py, self.inner.stats().map_err(from_core)?)
     }
 }
 
 pub fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    module.add_class::<crate::group::PyGroup>()?;
     module.add_class::<crate::stream::PyStream>()?;
     module.add_class::<PyPool>()
 }

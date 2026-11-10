@@ -22,7 +22,7 @@ def test_blob_types_null_empty_and_lifetime(fb, config):
 
 
 @pytest.mark.parametrize("size", [1023, 65534, 65535, 65536, 262145, 1048577])
-def test_blob_sizes_exact_limits_and_reuse(fb, config, size):
+def test_blob_sizes_exact_limits_and_reuse(fb, config, size, settled):
     text = ("á日" * ((size + 1) // 2))[:size]
     sql = "SELECT TEXT_VALUE, BINARY_VALUE FROM FBFAST_BLOBS WHERE ID=?"
     with fb.Pool(config(pool_size=1, max_blob_bytes=len(text.encode()))) as pool:
@@ -35,7 +35,7 @@ def test_blob_sizes_exact_limits_and_reuse(fb, config, size):
         assert caught.value.phase == "read_blob"
         assert not caught.value.cleanup_errors
         assert pool.fetch_val("SELECT 7 FROM RDB$DATABASE") == 7
-        assert pool.stats()["idle"] == 1
+        assert settled(pool)["idle"] == 1
 
 
 def test_blob_none_fallback_invalid_decode_and_unknown_subtype(fb, config):
@@ -58,7 +58,13 @@ def test_blobs_streams_json_snapshot_and_retained_results(fb, config, format):
         with pool.snapshot() as session:
             with session.stream(sql, batch_rows=100) as stream:
                 retained = list(stream)
-            assert all(len(batch) == 1 for batch in retained)
+            # 0.3.0: BLOB batches are split by decoded bytes, not forced to one row.
+            # A batch closes once it reaches batch_bytes, so only its last row can
+            # push it past the budget.
+            assert len(retained) < len(expected) or len(expected) == 1
+            for batch in retained:
+                sizes = [sum(len(cell or b"") for cell in row[1:]) for row in batch]
+                assert sum(sizes[:-1]) < 1024
             assert [row for batch in retained for row in batch] == expected
             with session.stream_json(sql, format=format, json_binary="base64") as chunks:
                 encoded = list(chunks)
@@ -74,7 +80,7 @@ def test_blobs_streams_json_snapshot_and_retained_results(fb, config, format):
         with pytest.raises(fb.DataConversionError, match="binary"):
             pool.fetch_json(sql)
         assert pool.fetch_val("SELECT 9 FROM RDB$DATABASE") == 9
-    assert retained[-1] == [expected[-1]]
+    assert retained[-1][-1] == expected[-1]
 
 
 def test_blob_async_and_stream_limit_cleanup(fb, config):
@@ -87,7 +93,7 @@ def test_blob_async_and_stream_limit_cleanup(fb, config):
                     async with factory("SELECT TEXT_VALUE FROM FBFAST_BLOBS WHERE ID=65535") as stream:
                         await anext(stream)
                 assert await pool.fetch_val_async("SELECT 1 FROM RDB$DATABASE") == 1
-            async with pool.snapshot_async() as session:
+            async with pool.snapshot() as session:
                 assert await session.fetch_json_async("SELECT TEXT_VALUE FROM FBFAST_BLOBS WHERE ID=0") == b'[{"TEXT_VALUE":""}]'
     asyncio.run(run())
 
@@ -107,12 +113,12 @@ def test_blob_limit_is_per_cell_after_transliteration_and_bind_never_creates_blo
         assert pool.fetch_val("SELECT 2 FROM RDB$DATABASE") == 2
 
 
-def test_blob_also_counts_toward_materialized_result_budget(fb, config):
+def test_blob_also_counts_toward_materialized_result_budget(fb, config, settled):
     with fb.Pool(config(pool_size=1, max_blob_bytes=2048, max_result_bytes=100)) as pool:
         with pytest.raises(fb.ResultLimitError, match="max_result_bytes"):
             pool.fetch_val("SELECT BINARY_VALUE FROM FBFAST_BLOBS WHERE ID=1023")
         assert pool.fetch_all("SELECT ID FROM FBFAST_TYPES WHERE 1=0") == []
-        assert pool.stats()["idle"] == 1
+        assert settled(pool)["idle"] == 1
 
 
 def test_blob_async_cancellation_deadline_and_heartbeat(fb, config, record_property):

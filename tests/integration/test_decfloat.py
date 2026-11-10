@@ -130,7 +130,7 @@ def test_decfloat_json_is_native_exact_and_non_finite_requires_explicit_null(fb,
 def test_decfloat_async_snapshot_and_stream(fb, config):
     async def run():
         async with fb.Pool(config(pool_size=1)) as pool:
-            async with pool.snapshot_async() as session:
+            async with pool.snapshot() as session:
                 exact(await session.fetch_val_async("SELECT D34 FROM FBFAST_DECIMALS WHERE ID=1"), CASES[0][2])
                 async with session.stream_async("SELECT D16 FROM FBFAST_DECIMALS ORDER BY ID", batch_rows=2) as stream:
                     rows = [row async for batch in stream for row in batch]

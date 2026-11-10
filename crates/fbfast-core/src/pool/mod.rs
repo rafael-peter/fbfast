@@ -4,8 +4,10 @@ mod cache_invalidation;
 mod cache_tests;
 mod controller;
 mod delivery;
+mod group;
 mod maintenance;
 mod pending;
+mod query;
 mod scheduler;
 mod session;
 mod session_scope;
@@ -18,17 +20,19 @@ mod tests;
 #[cfg(test)]
 mod tests_live;
 mod worker;
+mod worker_finish;
 mod worker_lifecycle;
 mod worker_query;
 
 use crate::{
     config::Config,
-    decode::Value,
     error::{Error, ErrorKind},
     sinks::rows::Rows,
 };
 pub use delivery::DeliveryBudget;
+pub use group::Signal;
 pub use pending::Pending;
+pub use query::{Query, Request, StreamFormat, StreamQuery};
 pub use session::Session;
 pub use state::Stats;
 use state::{Inner, Work};
@@ -61,22 +65,6 @@ pub struct Pool {
 }
 
 impl Pool {
-    pub fn submit_arrow(
-        &self,
-        sql: String,
-        params: Vec<Value>,
-        mode: crate::sinks::arrow::ArrowMode,
-        timeout: Option<f64>,
-    ) -> Result<Pending, Error> {
-        crate::statements::validate_read_query(&sql)?;
-        crate::execution::control::deadline(timeout)?;
-        self.inner()?.submit(Work::Arrow {
-            sql,
-            params,
-            mode,
-            timeout,
-        })
-    }
     pub fn new(config: Config, client_path: PathBuf) -> Self {
         Self {
             inner: Some(Arc::new(Inner::new(config, client_path))),
@@ -91,149 +79,65 @@ impl Pool {
         Ok(self.inner.as_ref().expect("pool inner exists until Drop"))
     }
 
-    pub fn submit_rows(
-        &self,
-        sql: String,
-        params: Vec<Value>,
-        first: bool,
-        unique_names: bool,
-        timeout: Option<f64>,
-    ) -> Result<Pending, Error> {
-        crate::statements::validate_read_query(&sql)?;
-        crate::execution::control::deadline(timeout)?;
-        self.inner()?.submit(Work::Rows {
-            sql,
-            params,
-            first,
-            unique_names,
-            timeout,
-        })
-    }
-
-    pub fn submit_explain(
-        &self,
-        sql: String,
-        params: Vec<Value>,
-        timeout: Option<f64>,
-    ) -> Result<Pending, Error> {
-        crate::statements::validate_read_query(&sql)?;
-        crate::execution::control::deadline(timeout)?;
-        self.inner()?.submit(Work::Explain {
-            sql,
-            params,
-            timeout,
-        })
-    }
-
-    pub fn submit_json(
-        &self,
-        sql: String,
-        params: Vec<Value>,
-        json: crate::sinks::json::JsonOptions,
-        timeout: Option<f64>,
-    ) -> Result<Pending, Error> {
+    /// Queues one materialized query. SQL is validated (tokenized) here once.
+    pub fn submit(&self, query: Query) -> Result<Pending, Error> {
         let inner = self.inner()?;
-        crate::statements::validate_read_query(&sql)?;
-        crate::execution::control::deadline(timeout)?;
-        inner.submit(Work::Json {
-            sql,
-            params,
-            json,
-            timeout,
-        })
+        query.validate()?;
+        inner.submit(Work::Query(query))
     }
 
     pub fn warmup(&self) -> Result<Vec<Pending>, Error> {
         let inner = self.inner()?;
         inner.submit_warmup()
     }
-    pub fn stream(
-        &self,
-        sql: String,
-        params: Vec<Value>,
-        batch_rows: Option<u32>,
-        unique_names: bool,
-        timeout: Option<f64>,
-    ) -> Result<Stream, Error> {
-        self.stream_output(
-            sql,
-            params,
-            batch_rows,
-            timeout,
-            stream::StreamFormat::Rows(unique_names),
-        )
-    }
-    pub fn stream_json(
-        &self,
-        sql: String,
-        params: Vec<Value>,
-        batch_rows: Option<u32>,
-        json: (
-            crate::sinks::json::JsonOptions,
-            crate::sinks::json::JsonFormat,
-        ),
-        timeout: Option<f64>,
-    ) -> Result<Stream, Error> {
-        self.stream_output(
-            sql,
-            params,
-            batch_rows,
-            timeout,
-            stream::StreamFormat::Json(json),
-        )
-    }
-    pub fn stream_arrow(
-        &self,
-        sql: String,
-        params: Vec<Value>,
-        batch_rows: Option<u32>,
-        timeout: Option<f64>,
-    ) -> Result<Stream, Error> {
-        self.stream_output(
-            sql,
-            params,
-            batch_rows,
-            timeout,
-            stream::StreamFormat::Arrow,
-        )
-    }
-    fn stream_output(
-        &self,
-        sql: String,
-        params: Vec<Value>,
-        batch_rows: Option<u32>,
-        timeout: Option<f64>,
-        format: stream::StreamFormat,
-    ) -> Result<Stream, Error> {
-        crate::statements::validate_read_query(&sql)?;
-        crate::execution::control::deadline(timeout)?;
+    /// Starts a stream; batches flow with bounded prefetch as the consumer asks.
+    pub fn open_stream(&self, query: StreamQuery) -> Result<Stream, Error> {
         let inner = self.inner()?;
-        let batch_rows = batch_rows.unwrap_or(inner.config.fetch_size);
-        if batch_rows == 0 {
-            return Err(Error::config("batch_rows", "must be positive"));
-        }
+        let batch_rows = query.validate(inner.config.fetch_size)?;
         let (sender, receiver) = flume::bounded(inner.config.prefetch_batches as usize + 1);
         let demand = Arc::new(stream_worker::Demand::default());
-        let pending = inner.submit(Work::Stream {
-            sql,
-            params,
-            batch_rows,
-            format,
-            timeout,
-            producer: stream_worker::Producer {
-                sender,
-                demand: demand.clone(),
+        let signal = Arc::new(Signal::default());
+        let pending = inner.submit_signaled(
+            Work::Stream {
+                query,
+                batch_rows,
+                producer: stream_worker::Producer {
+                    sender,
+                    demand: demand.clone(),
+                    signal: signal.clone(),
+                },
             },
-        })?;
-        Ok(Stream::new(pending, receiver, demand))
+            Some(signal.clone()),
+        )?;
+        Ok(Stream::new(pending, receiver, demand, signal))
     }
+
     pub fn clear_statement_cache(&self, timeout: Option<f64>) -> Result<Pending, Error> {
         crate::execution::control::deadline(timeout)?;
         self.inner()?.request_cache_clear(timeout)
     }
 
+    /// Maximum number of connections (`pool_size`).
+    pub fn size(&self) -> Result<usize, Error> {
+        Ok(self.inner()?.config.pool_size as usize)
+    }
+
     pub fn stats(&self) -> Result<Stats, Error> {
         Ok(self.inner()?.stats())
+    }
+
+    /// Capabilities observed by the most recently opened attachment, if any.
+    pub fn session_info(&self) -> Result<Option<crate::execution::SessionInfo>, Error> {
+        let inner = self.inner()?;
+        let state = inner.state.lock().unwrap_or_else(|e| e.into_inner());
+        Ok(state.session.clone())
+    }
+
+    /// Drains the per-operation records kept while `diagnostics` is enabled.
+    pub fn diagnostics(&self) -> Result<Vec<crate::execution::QueryTrace>, Error> {
+        let inner = self.inner()?;
+        let mut state = inner.state.lock().unwrap_or_else(|e| e.into_inner());
+        Ok(state.traces.drain(..).collect())
     }
 
     pub fn begin_close(&self) -> Result<(), Error> {

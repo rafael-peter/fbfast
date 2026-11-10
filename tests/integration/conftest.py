@@ -30,3 +30,19 @@ def config(fb):
         values.update(changes)
         return fb.FirebirdConfig(**values)
     return make
+
+
+@pytest.fixture
+def settled():
+    """Waits for deferred rollback/reset (0.3.0 replies before it) to finish."""
+    import time
+
+    def wait(pool, idle=1, timeout=5.0):
+        end = time.monotonic() + timeout
+        while True:
+            stats = pool.stats()
+            if stats["idle"] >= idle and stats["cleaning"] == 0:
+                return stats
+            assert time.monotonic() < end, stats
+            time.sleep(0.005)
+    return wait

@@ -59,6 +59,8 @@ impl Cancellation {
 pub struct QueryOptions<'a> {
     pub first: bool,
     pub unique_names: bool,
+    /// The pool already validated this exact SQL when it was submitted.
+    pub prevalidated: bool,
     pub deadline: Option<Instant>,
     pub cancellation: &'a Cancellation,
     pub cleaning: &'a dyn Fn() -> Result<bool, Error>,

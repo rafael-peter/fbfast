@@ -18,6 +18,14 @@ extern "C" void* fbfast_attach(void* master, SqlStateFn sqlstate,
             dpb->insertString(status, isc_dpb_process_name, options->app_name);
             dpb->insertString(status, isc_dpb_config, options->config);
             dpb->insertInt(status, isc_dpb_connect_timeout, options->connect_seconds);
+            // Consumed by the Remote provider before any statement is prepared;
+            // ignored by servers without inline BLOB support.
+            if (options->max_inline_blob_size >= 0)
+                dpb->insertInt(status, isc_dpb_max_inline_blob_size,
+                    static_cast<int>(options->max_inline_blob_size));
+            if (options->max_blob_cache_size >= 0)
+                dpb->insertInt(status, isc_dpb_max_blob_cache_size,
+                    static_cast<int>(options->max_blob_cache_size));
             provider = raw->master->getDispatcher();
             raw->attachment = provider->attachDatabase(status, options->database,
                 dpb->getBufferLength(status), dpb->getBuffer(status));

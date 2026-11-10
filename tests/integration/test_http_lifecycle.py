@@ -30,12 +30,12 @@ def application(fb, config, mode, transport):
 
     @asynccontextmanager
     async def lifespan(app):
-        state.pool = await fb.init_pool(config(pool_size=1, min_idle=0, prefetch_batches=0,
+        state.pool = await fb.init_pool_async(config(pool_size=1, min_idle=0, prefetch_batches=0,
                                               query_timeout=None), name=state.name)
         try:
             yield
         finally:
-            await fb.close_pool(state.name)
+            await fb.close_pool_async(state.name)
             state.shutdown.set()
 
     app = FastAPI(lifespan=lifespan)
@@ -170,7 +170,7 @@ def test_http_complete_stream_and_lifespan_cleanup(fb, config, transport):
                 writer.close()
                 await writer.wait_closed()
             await asyncio.wait_for(state.finished.wait(), 3)
-            assert state.pool.stats()["idle"] == 1
+            await until(lambda: state.pool.stats()["idle"] == 1)
     asyncio.run(run())
 
 

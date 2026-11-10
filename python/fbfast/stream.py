@@ -5,6 +5,7 @@ from types import TracebackType
 from typing import Any, Generic, Self, TypeVar, cast
 from .json_options import JsonSettings, JsonFormat
 
+from ._errors import UsageError, add_cleanup_note, usage
 from ._native import _Pool, _Stream, ArrowBatch, ArrowSchema
 
 Batch = list[tuple[Any, ...]] | list[dict[str, Any]]
@@ -12,11 +13,7 @@ _T = TypeVar("_T")
 
 
 def _cleanup_note(original: BaseException | None, cleanup: Exception) -> None:
-    if original is None:
-        raise cleanup
-    original.add_note(f"fbfast stream cleanup also failed: {cleanup}")
-    if hasattr(original, "cleanup_errors"):
-        original.cleanup_errors.append(cleanup)
+    add_cleanup_note(original, cleanup, "stream")
 
 
 class _Base(Generic[_T]):
@@ -39,7 +36,7 @@ class _Base(Generic[_T]):
 
     def _start(self) -> _Stream:
         if self._entered or self._closed:
-            raise RuntimeError("Enter a stream context exactly once")
+            raise usage(UsageError, "Enter a stream context exactly once")
         self._entered = True
         if self._json is None:
             self._native = self._owner.stream(self._sql, self._params, batch_rows=self._batch_rows,
@@ -52,7 +49,7 @@ class _Base(Generic[_T]):
 
     def _active(self) -> _Stream:
         if not self._entered or self._native is None:
-            raise RuntimeError("Enter the stream context before iteration")
+            raise usage(UsageError, "Enter the stream context before iteration")
         return self._native
 
 
@@ -173,7 +170,7 @@ class ArrowStream(_SyncStream[ArrowBatch]):
 
     def __arrow_c_stream__(self, requested_schema: object | None = None) -> object:
         if self._closed:
-            raise RuntimeError("Cannot export a closed Arrow stream")
+            raise usage(UsageError, "Cannot export a closed Arrow stream")
         return self._active().__arrow_c_stream__(requested_schema)
 
 

@@ -1,39 +1,38 @@
 [workspace]
-members = ["crates/fbfast-native", "crates/fbfast-core", "crates/fbfast-python"]
 exclude = ["fuzz"]
+members = ["crates/fbfast-native", "crates/fbfast-core", "crates/fbfast-python"]
 resolver = "2"
 
 [workspace.package]
-version = "0.2.1"
 edition = "2021"
-rust-version = "1.91"
+rust-version = "1.99"
+version = "0.3.0"
 
 [workspace.dependencies]
-fbfast-native = { path = "crates/fbfast-native" }
-fbfast-core = { path = "crates/fbfast-core" }
-libloading = "=0.8.9"
-thiserror = "=2.0.17"
-serde = { version = "=1.0.228", features = ["derive"] }
-serde_json = "=1.0.145"
-base64 = "=0.22.1"
-time = { version = "=0.3.47", default-features = false, features = ["std"] }
-pyo3 = { version = "=0.29.0" }
-pyo3-async-runtimes = { version = "=0.29.0", features = ["tokio-runtime"] }
-tokio = { version = "=1.48.0", features = ["rt-multi-thread", "time", "sync"] }
-flume = { version = "=0.11.1", default-features = false, features = ["async"] }
-cc = "=1.2.46"
+arrow-array = {version = "=60.1.0", features = ["ffi"]}
+arrow-buffer = "=60.1.0"
+arrow-schema = "=60.1.0"
+base64 = "=0.23.1"
+cc = "=1.11.0"
 dotenvy = "=0.15.7"
-zeroize = "=1.8.2"
-proptest = "=1.9.0"
-arrow-array = { version = "=60.0.0", features = ["ffi"] }
-arrow-buffer = "=60.0.0"
-arrow-schema = "=60.0.0"
+fbfast-core = {path = "crates/fbfast-core"}
+fbfast-native = {path = "crates/fbfast-native"}
+flume = {version = "=0.12.0", default-features = false, features = ["async"]}
+libloading = "=0.9.0"
+proptest = "=1.12.0"
+pyo3 = {version = "=0.30.1"}
+pyo3-async-runtimes = {version = "=0.30.0", features = ["tokio-runtime"]}
+serde = {version = "=1.0.229", features = ["derive"]}
+serde_json = "=1.0.154"
+thiserror = "=2.0.21"
+time = {version = "=0.3.55", default-features = false, features = ["std"]}
+tokio = {version = "=1.54.1", features = ["rt-multi-thread", "time", "sync"]}
+zeroize = "=1.9.1"
 
 [profile.release]
-lto = "thin"
 codegen-units = 1
+lto = "thin"
 strip = "none"
 
 [profile.dev]
 strip = "none"
-

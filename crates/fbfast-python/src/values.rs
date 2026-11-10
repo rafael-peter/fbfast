@@ -8,16 +8,37 @@ use fbfast_core::{
 };
 use pyo3::{
     prelude::*,
-    types::{PyBool, PyBytes, PyDict, PyFloat, PyInt, PyList, PyString, PyTuple},
+    sync::PyOnceLock,
+    types::{PyBytes, PyDate, PyDateTime, PyDict, PyList, PyString, PyTime, PyTuple},
     IntoPyObjectExt,
 };
 use std::{
-    cell::Cell,
+    cell::{Cell, RefCell},
     sync::Arc,
     time::{Duration, Instant},
 };
 
 const MJD_ORDINAL: i32 = 678576;
+
+/// Modules imported once per process. Attributes are still looked up per
+/// result, so replacing e.g. `decimal.Decimal` at runtime keeps working.
+struct Modules {
+    decimal: Py<PyModule>,
+    datetime: Py<PyModule>,
+    temporal: Py<PyModule>,
+}
+
+static MODULES: PyOnceLock<Modules> = PyOnceLock::new();
+
+fn modules(py: Python<'_>) -> PyResult<&'static Modules> {
+    MODULES.get_or_try_init(py, || {
+        Ok(Modules {
+            decimal: py.import("decimal")?.unbind(),
+            datetime: py.import("datetime")?.unbind(),
+            temporal: py.import("fbfast.temporal")?.unbind(),
+        })
+    })
+}
 
 pub struct Converter<'py> {
     budget: Option<DeliveryBudget>,
@@ -32,25 +53,29 @@ pub struct Converter<'py> {
     zoned_time: Bound<'py, PyAny>,
     timestamp_input: Bound<'py, PyAny>,
     timestamp_output: Bound<'py, PyAny>,
+    /// Reused per row so building a tuple allocates no intermediate Vec.
+    cells: RefCell<Vec<Py<PyAny>>>,
 }
 
 impl<'py> Converter<'py> {
     pub fn new(py: Python<'py>) -> PyResult<Self> {
-        let datetime = py.import("datetime")?;
-        let temporal = py.import("fbfast.temporal")?;
+        let modules = modules(py)?;
+        let datetime = modules.datetime.bind(py);
+        let temporal = modules.temporal.bind(py);
         Ok(Self {
             budget: None,
             converted: Cell::new(0),
             last_checkpoint: Cell::new(Instant::now()),
             async_control: None,
             py,
-            decimal: py.import("decimal")?.getattr("Decimal")?,
+            decimal: modules.decimal.bind(py).getattr("Decimal")?,
             date: datetime.getattr("date")?,
             time: datetime.getattr("time")?,
             datetime: datetime.getattr("datetime")?,
             zoned_time: temporal.getattr("TimeWithZone")?,
             timestamp_input: temporal.getattr("_timestamp_parameter")?,
             timestamp_output: temporal.getattr("_timestamp_from_native")?,
+            cells: RefCell::new(Vec::new()),
         })
     }
 
@@ -85,118 +110,52 @@ impl<'py> Converter<'py> {
         Ok(())
     }
 
-    pub fn params(&self, params: Option<&Bound<'py, PyAny>>) -> PyResult<Vec<Value>> {
-        let Some(params) = params.filter(|p| !p.is_none()) else {
-            return Ok(Vec::new());
-        };
-        if !params.is_instance_of::<PyList>() && !params.is_instance_of::<PyTuple>() {
-            return Err(conversion("params must be a list, tuple or None"));
-        }
-        params
-            .try_iter()?
-            .map(|value| self.parameter(&value?))
-            .collect()
-    }
-
-    fn parameter(&self, value: &Bound<'py, PyAny>) -> PyResult<Value> {
-        if value.is_none() {
-            return Ok(Value::Null);
-        }
-        if value.is_instance_of::<PyBool>() {
-            return Ok(Value::Bool(value.extract()?));
-        }
-        if value.is_instance_of::<PyInt>() {
-            return value
-                .extract()
-                .map(Value::Int)
-                .map_err(|_| conversion("Integer exceeds signed INT128 range"));
-        }
-        if value.is_instance_of::<PyFloat>() {
-            return Ok(Value::Float(value.extract()?));
-        }
-        if value.is_instance_of::<PyString>() {
-            return Ok(Value::Text(value.extract()?));
-        }
-        if value.is_instance_of::<PyBytes>() {
-            return Ok(Value::Bytes(value.extract()?));
-        }
-        if value.is_instance(&self.decimal)? {
-            // Preserve exponent, signed zero and special-value payloads. The
-            // prepared SQL type determines exact range/scale validation in core.
-            return Ok(Value::DecFloat(value.str()?.extract()?));
-        }
-        if value.is_instance(&self.datetime)? {
-            if !value.getattr("tzinfo")?.is_none() {
-                let (utc_date, utc_time, local_date, local_time, zone) = self
-                    .timestamp_input
-                    .call1((value,))?
-                    .extract::<(i32, u32, i32, u32, String)>()?;
-                return Ok(Value::TimestampTz(Box::new(
-                    fbfast_core::decode::ZonedValue {
-                        utc_date,
-                        utc_time,
-                        local_date,
-                        local_time,
-                        zone,
-                    },
-                )));
-            }
-            return Ok(Value::Timestamp {
-                date: ordinal(value)?,
-                time: ticks(value)?,
-            });
-        }
-        if value.is_instance(&self.date)? {
-            return Ok(Value::Date(ordinal(value)?));
-        }
-        if value.is_instance(&self.time)? {
-            naive(value)?;
-            return Ok(Value::Time(ticks(value)?));
-        }
-        if value.is_instance(&self.zoned_time)? {
-            return Ok(Value::TimeTz {
-                utc_time: ticks(&value.getattr("utc_time")?)?,
-                zone: value.getattr("zone")?.extract()?,
-            });
-        }
-        Err(conversion("Unsupported parameter type"))
-    }
-
-    pub fn value(&self, value: &Value) -> PyResult<Py<PyAny>> {
-        let count = self.converted.get();
-        self.converted.set(count.wrapping_add(1));
-        if count.is_multiple_of(512)
+    /// Counts converted cells and runs the cancellation/deadline checkpoint
+    /// every 512 cells (and every 2 ms in async delivery).
+    fn account(&self, cells: usize) -> PyResult<()> {
+        let before = self.converted.get();
+        let after = before.wrapping_add(cells.max(1));
+        self.converted.set(after);
+        if before / 512 != after / 512
+            || before == 0
             || (self.async_control.is_some()
                 && self.last_checkpoint.get().elapsed() >= Duration::from_millis(2))
         {
             self.checkpoint()?;
         }
+        Ok(())
+    }
+
+    pub fn value(&self, value: &Value) -> PyResult<Py<PyAny>> {
+        self.account(1)?;
+        self.cell(value)
+    }
+
+    fn cell(&self, value: &Value) -> PyResult<Py<PyAny>> {
+        let py = self.py;
         match value {
-            Value::Null => Ok(self.py.None()),
-            Value::Bool(value) => value.into_py_any(self.py),
-            Value::Int(value) => value.into_py_any(self.py),
-            Value::Float(value) => value.into_py_any(self.py),
-            Value::Text(value) => value.into_py_any(self.py),
+            Value::Null => Ok(py.None()),
+            Value::Bool(value) => value.into_py_any(py),
+            // Nearly every integer fits i64, whose conversion avoids the
+            // byte-array path Python uses for 128-bit values.
+            Value::Int(value) => match i64::try_from(*value) {
+                Ok(small) => small.into_py_any(py),
+                Err(_) => value.into_py_any(py),
+            },
+            Value::Float(value) => value.into_py_any(py),
+            Value::Text(value) => value.into_py_any(py),
             Value::DecFloat(value) => Ok(self.decimal.call1((value,))?.unbind()),
             Value::Bytes(value) if value.len() >= 1024 * 1024 => self.bytes(value),
-            Value::Bytes(value) => Ok(PyBytes::new(self.py, value).into_any().unbind()),
-            Value::Decimal { coefficient, scale } => {
-                let text = coefficient.unsigned_abs().to_string();
-                let digits = PyTuple::new(self.py, text.bytes().map(|b| b - b'0'))?;
-                Ok(self
-                    .decimal
-                    .call1(((u8::from(*coefficient < 0), digits, scale),))?
-                    .unbind())
-            }
-            Value::Date(value) => Ok(self
-                .date
-                .call_method1(
-                    "fromordinal",
-                    (value
-                        .checked_add(MJD_ORDINAL)
-                        .ok_or_else(|| conversion("Date out of range"))?,),
-                )?
+            Value::Bytes(value) => Ok(PyBytes::new(py, value).into_any().unbind()),
+            Value::Decimal { coefficient, scale } => Ok(self
+                .decimal
+                .call1((decimal_text(*coefficient, *scale),))?
                 .unbind()),
+            Value::Date(value) => {
+                let (year, month, day) =
+                    civil(*value).ok_or_else(|| conversion("Date out of range"))?;
+                Ok(PyDate::new(py, year, month, day)?.into_any().unbind())
+            }
             Value::Time(value) => self.time_value(*value),
             Value::TimeTz { utc_time, zone } => Ok(self
                 .zoned_time
@@ -213,52 +172,73 @@ impl<'py> Converter<'py> {
                 ))?
                 .unbind()),
             Value::Timestamp { date, time } => {
-                let date = self.value(&Value::Date(*date))?;
-                let time = self.time_value(*time)?;
-                Ok(self
-                    .datetime
-                    .call_method1("combine", (date, time))?
-                    .unbind())
+                let (year, month, day) =
+                    civil(*date).ok_or_else(|| conversion("Date out of range"))?;
+                let (hour, minute, second, micro) =
+                    clock(*time).ok_or_else(|| conversion("Native time out of range"))?;
+                Ok(
+                    PyDateTime::new(py, year, month, day, hour, minute, second, micro, None)?
+                        .into_any()
+                        .unbind(),
+                )
             }
         }
     }
 
     fn time_value(&self, ticks: u32) -> PyResult<Py<PyAny>> {
-        if ticks >= 864_000_000 {
-            return Err(conversion("Native time out of range"));
-        }
-        let seconds = ticks / 10_000;
-        Ok(self
-            .time
-            .call1((
-                seconds / 3600,
-                seconds / 60 % 60,
-                seconds % 60,
-                ticks % 10_000 * 100,
-            ))?
+        let (hour, minute, second, micro) =
+            clock(ticks).ok_or_else(|| conversion("Native time out of range"))?;
+        Ok(PyTime::new(self.py, hour, minute, second, micro, None)?
+            .into_any()
             .unbind())
     }
 
     pub fn row(&self, rows: &Rows, index: usize, as_dict: bool) -> PyResult<Py<PyAny>> {
+        if as_dict {
+            let keys = self.keys(rows);
+            return self.row_with(rows, index, Some(&keys));
+        }
+        self.row_with(rows, index, None)
+    }
+
+    /// Column names as Python strings, created once per result.
+    fn keys(&self, rows: &Rows) -> Vec<Bound<'py, PyString>> {
+        rows.names
+            .iter()
+            .map(|name| PyString::intern(self.py, name))
+            .collect()
+    }
+
+    fn row_with(
+        &self,
+        rows: &Rows,
+        index: usize,
+        keys: Option<&[Bound<'py, PyString>]>,
+    ) -> PyResult<Py<PyAny>> {
         let Some(row) = rows.row(index) else {
             return Ok(self.py.None());
         };
-        if as_dict {
+        self.account(row.len())?;
+        if let Some(keys) = keys {
             let dict = PyDict::new(self.py);
-            for (name, value) in rows.names.iter().zip(row) {
-                dict.set_item(name, self.value(value)?)?;
+            for (name, value) in keys.iter().zip(row) {
+                dict.set_item(name, self.cell(value)?)?;
             }
-            Ok(dict.into_any().unbind())
-        } else {
-            let values: PyResult<Vec<_>> = row.iter().map(|value| self.value(value)).collect();
-            Ok(PyTuple::new(self.py, values?)?.into_any().unbind())
+            return Ok(dict.into_any().unbind());
         }
+        let mut cells = self.cells.borrow_mut();
+        cells.clear();
+        for value in row {
+            cells.push(self.cell(value)?);
+        }
+        Ok(PyTuple::new(self.py, cells.drain(..))?.into_any().unbind())
     }
 
     pub fn all(&self, rows: &Rows, as_dict: bool) -> PyResult<Py<PyAny>> {
+        let keys = as_dict.then(|| self.keys(rows));
         let list = PyList::empty(self.py);
         for index in 0..rows.count {
-            list.append(self.row(rows, index, as_dict)?)?;
+            list.append(self.row_with(rows, index, keys.as_deref())?)?;
         }
         Ok(list.into_any().unbind())
     }
@@ -287,26 +267,9 @@ fn conversion(message: &str) -> PyErr {
         message,
     ))
 }
-fn ordinal(value: &Bound<'_, PyAny>) -> PyResult<i32> {
-    Ok(value.call_method0("toordinal")?.extract::<i32>()? - MJD_ORDINAL)
-}
-fn naive(value: &Bound<'_, PyAny>) -> PyResult<()> {
-    if !value.getattr("tzinfo")?.is_none() {
-        return Err(conversion(
-            "Use TimeWithZone for TIME WITH TIME ZONE; aware time has no date for DST rules",
-        ));
-    }
-    Ok(())
-}
-fn ticks(value: &Bound<'_, PyAny>) -> PyResult<u32> {
-    let hour: u32 = value.getattr("hour")?.extract()?;
-    let minute: u32 = value.getattr("minute")?.extract()?;
-    let second: u32 = value.getattr("second")?.extract()?;
-    let microsecond: u32 = value.getattr("microsecond")?.extract()?;
-    if !microsecond.is_multiple_of(100) {
-        return Err(conversion(
-            "Firebird TIME precision is 100 microseconds; value would lose precision",
-        ));
-    }
-    Ok(((hour * 60 + minute) * 60 + second) * 10000 + microsecond / 100)
-}
+
+#[path = "values_calendar.rs"]
+mod calendar;
+#[path = "values_params.rs"]
+mod params;
+use calendar::{civil, clock, decimal_text};

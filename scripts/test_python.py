@@ -22,7 +22,7 @@ def main() -> None:
     )
     subprocess.run([sys.executable, "-m", "pytest", "tests/integration", "-q",
                     "--junitxml", str(ROOT / ".tools/python-integration.xml"),
-                    "-o", "junit_family=xunit1"], cwd=ROOT, env=env, check=True, timeout=240)
+                    "-o", "junit_family=xunit1"], cwd=ROOT, env=env, check=True, timeout=600)
 
 
 if __name__ == "__main__":

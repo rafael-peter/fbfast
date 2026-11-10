@@ -1,3 +1,4 @@
+use fbfast_core::pool::Query;
 use fbfast_core::{
     config::{Config, EnvFile, Inputs},
     decode::Value,
@@ -69,7 +70,7 @@ fn wait(pending: &mut Pending) -> Result<Output, Error> {
 fn scalar(pool: &Pool, sql: &str) -> i128 {
     let result = wait(
         &mut pool
-            .submit_rows(sql.into(), vec![], true, false, Some(3.0))
+            .submit(Query::rows(sql.into(), vec![], true, false, Some(3.0)))
             .unwrap(),
     )
     .unwrap();
@@ -88,37 +89,37 @@ fn real_cancel_preserves_capacity_fifo_and_discards_attachment() {
     let p = pool(config());
     let first_connection = scalar(&p, "SELECT CURRENT_CONNECTION FROM RDB$DATABASE");
     let mut active = p
-        .submit_rows(LONG.into(), vec![], true, false, None)
+        .submit(Query::rows(LONG.into(), vec![], true, false, None))
         .unwrap();
     thread::sleep(Duration::from_millis(100));
     let mut first = p
-        .submit_rows(
+        .submit(Query::rows(
             "SELECT CURRENT_TRANSACTION FROM RDB$DATABASE".into(),
             vec![],
             true,
             false,
             None,
-        )
+        ))
         .unwrap();
     let mut second = p
-        .submit_rows(
+        .submit(Query::rows(
             "SELECT CURRENT_TRANSACTION FROM RDB$DATABASE".into(),
             vec![],
             true,
             false,
             None,
-        )
+        ))
         .unwrap();
     assert_eq!(p.stats().unwrap().waiting, 2);
     assert_eq!(p.stats().unwrap().connections_created, 1);
     assert!(matches!(
-        p.submit_rows(
+        p.submit(Query::rows(
             "SELECT 1 FROM RDB$DATABASE".into(),
             vec![],
             true,
             false,
             None
-        ),
+        )),
         Err(Error {
             kind: ErrorKind::PoolBusy,
             ..
@@ -157,7 +158,7 @@ fn autonomous_deadline_works_without_polling_result() {
     let p = pool(config());
     scalar(&p, "SELECT 1 FROM RDB$DATABASE");
     let mut pending = p
-        .submit_rows(LONG.into(), vec![], true, false, Some(0.1))
+        .submit(Query::rows(LONG.into(), vec![], true, false, Some(0.1)))
         .unwrap();
     // No waiter polling drives the timer: the dedicated controller must cancel it.
     thread::sleep(Duration::from_millis(400));
@@ -192,25 +193,25 @@ fn unresponsive_attach_remains_counted_after_caller_timeout() {
     });
     let p = pool(config);
     let mut pending = p
-        .submit_rows(
+        .submit(Query::rows(
             "SELECT 1 FROM RDB$DATABASE".into(),
             vec![],
             true,
             false,
             None,
-        )
+        ))
         .unwrap();
     accepted.recv_timeout(Duration::from_secs(3)).unwrap();
     assert_eq!(wait(&mut pending).unwrap_err().kind, ErrorKind::PoolTimeout);
     assert_eq!(p.stats().unwrap().opening, 1);
     assert!(matches!(
-        p.submit_rows(
+        p.submit(Query::rows(
             "SELECT 2 FROM RDB$DATABASE".into(),
             vec![],
             true,
             false,
             None
-        ),
+        )),
         Err(Error {
             kind: ErrorKind::PoolBusy,
             ..

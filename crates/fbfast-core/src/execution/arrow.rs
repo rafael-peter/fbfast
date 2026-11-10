@@ -1,4 +1,8 @@
-use super::{control::QueryOptions, cursor::RowSink, ExecutionConnection};
+use super::{
+    control::QueryOptions,
+    cursor::{native_batch_rows, RowSink},
+    ExecutionConnection,
+};
 use crate::{
     config::Config,
     decode::{DecodePlan, NativeReader, Value},
@@ -33,6 +37,9 @@ impl RowSink for Materialized {
             ));
         }
         self.builder.push(plan, row, native)
+    }
+    fn pending_bytes(&self) -> usize {
+        self.builder.pending_bytes
     }
     fn after_fetch(&mut self) -> Result<bool, Error> {
         if self.builder.rows != 0 {
@@ -72,14 +79,11 @@ impl ExecutionConnection {
         options: &QueryOptions<'_>,
     ) -> Result<ArrowOutput, Error> {
         self.operation(sql, options, |connection, entry, deadline| {
-            let row_bytes = entry.plan.row_capacity_bytes()?.max(1) as u64;
-            let capacity = if entry.plan.has_blobs() {
-                1
-            } else {
-                connection.config.fetch_size.min(
-                    (connection.config.batch_bytes / row_bytes).clamp(1, u32::MAX as u64) as u32,
-                )
-            };
+            let capacity = native_batch_rows(
+                &entry.plan,
+                connection.config.fetch_size,
+                connection.config.batch_bytes,
+            )?;
             let builder =
                 ArrowBuilder::new(&entry.plan, &connection.config, mode, capacity as usize)?;
             let output = ArrowOutput {

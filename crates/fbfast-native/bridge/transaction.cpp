@@ -31,3 +31,21 @@ extern "C" void fbfast_rollback(void* handle, FbError* error) noexcept {
         if (c->transaction) { c->transaction->rollback(status); c->transaction = nullptr; }
     });
 }
+
+// ALTER SESSION RESET inside the current transaction: Firebird rolls it back,
+// resets the session and starts a new transaction with the same parameters,
+// all in one round trip. The connection is left with that fresh transaction.
+extern "C" uint32_t fbfast_reset_restart(void* handle, FbError* error) noexcept {
+    auto* c = static_cast<Connection*>(handle);
+    uint32_t same = 0;
+    guarded(c, error, [&](auto* status) {
+        require(c->transaction && !c->cursor && !c->blob,
+            "Session restart requires an active transaction and no open cursor");
+        ITransaction* next = c->attachment->execute(status, c->transaction, 0,
+            "ALTER SESSION RESET", 3, nullptr, nullptr, nullptr, nullptr);
+        require(next != nullptr, "Session reset did not restart the transaction");
+        same = next == c->transaction ? 1 : 0;
+        c->transaction = next;
+    });
+    return same;
+}

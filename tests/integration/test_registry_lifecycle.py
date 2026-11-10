@@ -12,7 +12,7 @@ import pytest
 
 
 def test_cancelled_initialization_drains_and_releases_name(fb, config, monkeypatch):
-    original = fb.Pool.warmup
+    original = fb.Pool.warmup_async
     pools = []
 
     async def run():
@@ -23,8 +23,8 @@ def test_cancelled_initialization_drains_and_releases_name(fb, config, monkeypat
             pools.append(pool)
             warmed.set()
             await asyncio.Event().wait()
-        monkeypatch.setattr(fb.Pool, "warmup", warmup)
-        pending = asyncio.create_task(fb.init_pool(config(pool_size=1), name="cancel-init"))
+        monkeypatch.setattr(fb.Pool, "warmup_async", warmup)
+        pending = asyncio.create_task(fb.init_pool_async(config(pool_size=1), name="cancel-init"))
         try:
             await asyncio.wait_for(warmed.wait(), 3)
             with pytest.raises(fb.PoolNotInitializedError):
@@ -33,17 +33,17 @@ def test_cancelled_initialization_drains_and_releases_name(fb, config, monkeypat
             with pytest.raises(asyncio.CancelledError):
                 await pending
             assert pools[0].stats()["closed"] == 1
-            monkeypatch.setattr(fb.Pool, "warmup", original)
-            replacement = await fb.init_pool(config(pool_size=1), name="cancel-init")
+            monkeypatch.setattr(fb.Pool, "warmup_async", original)
+            replacement = await fb.init_pool_async(config(pool_size=1), name="cancel-init")
             assert fb.get_pool("cancel-init") is replacement
         finally:
             pending.cancel()
-            await fb.close_pool("cancel-init")
+            await fb.close_pool_async("cancel-init")
     asyncio.run(run())
 
 
 def test_cancelled_close_retains_name_until_retry(fb, config, monkeypatch):
-    original = fb.Pool.close
+    original = fb.Pool.aclose
 
     async def run():
         closing = asyncio.Event()
@@ -51,9 +51,9 @@ def test_cancelled_close_retains_name_until_retry(fb, config, monkeypatch):
         async def close(pool):
             closing.set()
             await asyncio.Event().wait()
-        pool = await fb.init_pool(config(pool_size=1), name="cancel-close")
-        monkeypatch.setattr(fb.Pool, "close", close)
-        pending = asyncio.create_task(fb.close_pool("cancel-close"))
+        pool = await fb.init_pool_async(config(pool_size=1), name="cancel-close")
+        monkeypatch.setattr(fb.Pool, "aclose", close)
+        pending = asyncio.create_task(fb.close_pool_async("cancel-close"))
         try:
             await asyncio.wait_for(closing.wait(), 3)
             assert pool.stats()["closing_pool"]
@@ -63,22 +63,22 @@ def test_cancelled_close_retains_name_until_retry(fb, config, monkeypatch):
             with pytest.raises(fb.PoolNotInitializedError):
                 fb.get_pool("cancel-close")
             with pytest.raises(fb.PoolAlreadyInitializedError):
-                fb.init_pool_sync(config(), name="cancel-close")
+                fb.init_pool(config(), name="cancel-close")
         finally:
             pending.cancel()
-            monkeypatch.setattr(fb.Pool, "close", original)
-            await fb.close_pool("cancel-close")
+            monkeypatch.setattr(fb.Pool, "aclose", original)
+            await fb.close_pool_async("cancel-close")
         assert pool.stats()["closed"] == 1
-        replacement = await fb.init_pool(config(pool_size=1), name="cancel-close")
+        replacement = await fb.init_pool_async(config(pool_size=1), name="cancel-close")
         try:
             assert replacement is not pool
         finally:
-            await fb.close_pool("cancel-close")
+            await fb.close_pool_async("cancel-close")
     asyncio.run(run())
 
 
 def test_delayed_close_and_stream_cannot_target_replacement(fb, config, monkeypatch):
-    original = fb.Pool.close
+    original = fb.Pool.aclose
 
     async def run():
         entered, release = asyncio.Event(), asyncio.Event()
@@ -90,14 +90,14 @@ def test_delayed_close_and_stream_cannot_target_replacement(fb, config, monkeypa
                 entered.set()
                 await release.wait()
             await original(pool)
-        old = await fb.init_pool(config(pool_size=1), name="replace")
+        old = await fb.init_pool_async(config(pool_size=1), name="replace")
         retained = fb.stream_async("SELECT 1 FROM RDB$DATABASE", pool="replace")
-        monkeypatch.setattr(fb.Pool, "close", close)
-        delayed = asyncio.create_task(fb.close_pool("replace"))
+        monkeypatch.setattr(fb.Pool, "aclose", close)
+        delayed = asyncio.create_task(fb.close_pool_async("replace"))
         try:
             await asyncio.wait_for(entered.wait(), 3)
-            await fb.close_pool("replace")
-            replacement = await fb.init_pool(config(pool_size=1), name="replace")
+            await fb.close_pool_async("replace")
+            replacement = await fb.init_pool_async(config(pool_size=1), name="replace")
             release.set()
             await delayed
             assert fb.get_pool("replace") is replacement
@@ -109,8 +109,8 @@ def test_delayed_close_and_stream_cannot_target_replacement(fb, config, monkeypa
         finally:
             release.set()
             await delayed
-            monkeypatch.setattr(fb.Pool, "close", original)
-            await fb.close_pool("replace")
+            monkeypatch.setattr(fb.Pool, "aclose", original)
+            await fb.close_pool_async("replace")
     asyncio.run(run())
 
 
@@ -139,7 +139,7 @@ def test_repeated_cancel_during_native_attach_retains_cleanup_reservation(fb, co
         async with server:
             cfg = config(port=server.sockets[0].getsockname()[1], pool_size=1,
                          acquire_timeout=3, connect_timeout=3, close_timeout=2)
-            pending = asyncio.create_task(fb.init_pool(cfg, name="cancel-attach"))
+            pending = asyncio.create_task(fb.init_pool_async(cfg, name="cancel-attach"))
             try:
                 await asyncio.wait_for(accepted.wait(), 3)
                 assert pools[0].stats()["opening"] == 1
@@ -153,13 +153,13 @@ def test_repeated_cancel_during_native_attach_retains_cleanup_reservation(fb, co
                     await pending
                 assert any("cleanup" in note for note in failure.value.__notes__)
                 with pytest.raises(fb.PoolAlreadyInitializedError):
-                    await fb.init_pool(config(), name="cancel-attach")
+                    await fb.init_pool_async(config(), name="cancel-attach")
                 with pytest.raises(fb.PoolNotInitializedError):
                     fb.get_pool("cancel-attach")
             finally:
                 release.set()
                 await asyncio.wait_for(finished.wait(), 3)
-                await fb.close_pool("cancel-attach")
+                await fb.close_pool_async("cancel-attach")
             assert pools[0].stats()["closed"] == 1
     asyncio.run(run())
 
@@ -189,18 +189,18 @@ def test_open_failure_and_close_timeout_keep_native_slot_reserved(fb, config, mo
             cfg = config(port=listener.getsockname()[1], pool_size=1,
                          acquire_timeout=0.05, close_timeout=0.03, connect_timeout=3)
             with pytest.raises(fb.PoolTimeoutError) as failure:
-                fb.init_pool_sync(cfg, name="stalled")
+                fb.init_pool(cfg, name="stalled")
             assert accepted.is_set()
             assert failure.value.phase == "acquire"
             assert failure.value.cleanup_errors
             assert isinstance(failure.value.cleanup_errors[0], fb.PoolTimeoutError)
             assert pools[0].stats()["opening"] == 1
             with pytest.raises(fb.PoolAlreadyInitializedError):
-                fb.init_pool_sync(config(), name="stalled")
+                fb.init_pool(config(), name="stalled")
             with pytest.raises(fb.PoolNotInitializedError):
                 fb.get_pool("stalled")
             with pytest.raises(fb.PoolTimeoutError):
-                fb.close_pool_sync("stalled")
+                fb.close_pool("stalled")
         finally:
             release.set()
             server.join(3)
@@ -208,20 +208,20 @@ def test_open_failure_and_close_timeout_keep_native_slot_reserved(fb, config, mo
             while pools[0].stats()["closed"] != 1:
                 assert time.monotonic() < end
                 time.sleep(0.005)
-            fb.close_pool_sync("stalled")
+            fb.close_pool("stalled")
         assert pools[0].stats()["closed"] == 1
 
 
 @pytest.mark.skipif(not hasattr(os, "fork"), reason="POSIX fork guard")
 def test_registry_fork_guard_precedes_locked_mutex(fb, config):
-    pool = fb.init_pool_sync(config(pool_size=1), name="fork")
+    pool = fb.init_pool(config(pool_size=1), name="fork")
     registry = importlib.import_module("fbfast.registry")
     registry._lock.acquire()
     child = os.fork()
     if child == 0:
         try:
-            for call in (lambda: fb.get_pool("fork"), lambda: fb.close_pool_sync("fork"),
-                         lambda: fb.init_pool_sync(config(), name="new")):
+            for call in (lambda: fb.get_pool("fork"), lambda: fb.close_pool("fork"),
+                         lambda: fb.init_pool(config(), name="new")):
                 try:
                     call()
                 except fb.ForkSafetyError:
@@ -246,7 +246,7 @@ def test_registry_fork_guard_precedes_locked_mutex(fb, config):
         assert os.waitstatus_to_exitcode(status) == 0
         assert pool.fetch_val("SELECT 1 FROM RDB$DATABASE") == 1
     finally:
-        fb.close_pool_sync("fork")
+        fb.close_pool("fork")
 
 
 @pytest.mark.skipif(not hasattr(os, "fork"), reason="POSIX fork lifecycle")
@@ -265,10 +265,10 @@ registry._lock.acquire()
 child = os.fork()
 if child == 0:
     try:
-        pool = fbfast.init_pool_sync(config)
+        pool = fbfast.init_pool(config)
         assert fbfast.get_pool() is pool
         assert fbfast.fetch_val("SELECT 1 FROM RDB$DATABASE") == 1
-        fbfast.close_pool_sync()
+        fbfast.close_pool()
         os._exit(0)
     except BaseException:
         os._exit(2)

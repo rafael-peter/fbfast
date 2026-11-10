@@ -5,14 +5,14 @@ import importlib
 import json
 from typing import Any, Literal
 
-from ._native import DataConversionError
+from ._errors import ArgumentError, DataConversionError, usage
 
 Unsupported = Literal["error", "string"]
 
 
 def _mode(unsupported: Unsupported) -> str:
     if unsupported not in ("error", "string"):
-        raise ValueError("unsupported must be 'error' or 'string'")
+        raise usage(ArgumentError, "unsupported must be 'error' or 'string'")
     return "polars_string" if unsupported == "string" else "polars"
 
 
@@ -33,9 +33,8 @@ def _convert(native: Any, arrow: bool) -> Any:
         result = result.struct.unnest()
     expected = {field["name"]: _dtype(pl, field["type"]) for field in json.loads(native.schema_spec)}
     if not isinstance(result, pl.DataFrame) or list(result.schema.items()) != list(expected.items()):
-        error = DataConversionError("Polars changed the native schema; lossless conversion could not be verified")
-        error.phase, error.sqlstate, error.native_codes, error.cleanup_errors = "polars", None, [], []
-        raise error
+        raise usage(DataConversionError, "Polars changed the native schema; lossless conversion "
+                    "could not be verified", phase="polars")
     return result
 
 

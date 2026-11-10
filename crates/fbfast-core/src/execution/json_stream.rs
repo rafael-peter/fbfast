@@ -113,6 +113,9 @@ impl<C: BatchConsumer<JsonOutput>> RowSink for Chunks<'_, C> {
         self.flush()?;
         Ok(!self.stopped)
     }
+    fn pending_bytes(&self) -> usize {
+        self.output.data.len()
+    }
 }
 
 impl ExecutionConnection {
@@ -131,9 +134,6 @@ impl ExecutionConnection {
         let (mut summary, stopped, pending_rows) =
             self.operation(sql, options, |connection, entry, deadline| {
                 let writer = JsonWriter::new(&entry.plan, json.0)?;
-                let byte_rows = (connection.config.batch_bytes
-                    / entry.plan.row_capacity_bytes()?.max(1) as u64)
-                    .clamp(1, u32::MAX as u64) as u32;
                 let mut sink = Chunks {
                     writer,
                     record: Vec::new(),
@@ -151,14 +151,7 @@ impl ExecutionConnection {
                     summary: StreamSummary::default(),
                     stopped: false,
                 };
-                connection.pump(
-                    entry,
-                    params,
-                    options,
-                    deadline,
-                    batch_rows.min(byte_rows),
-                    &mut sink,
-                )?;
+                connection.pump(entry, params, options, deadline, batch_rows, &mut sink)?;
                 Ok((sink.summary, sink.stopped, sink.output.rows))
             })?;
         // Only a successful cursor/transaction cleanup may complete a JSON array.

@@ -29,7 +29,7 @@ def test_keyboard_interrupt_requests_native_cancel(fb, config):
     assert pool.stats()["control_threads"] == 0
 
 
-def test_deadline_covers_python_result_conversion(fb, config, monkeypatch):
+def test_deadline_covers_python_result_conversion(fb, config, monkeypatch, settled):
     original_decimal = decimal.Decimal
 
     class SlowDecimal(original_decimal):
@@ -42,7 +42,8 @@ def test_deadline_covers_python_result_conversion(fb, config, monkeypatch):
         with pytest.raises(fb.QueryTimeoutError) as error:
             pool.fetch_val("SELECT AMOUNT FROM FBFAST_TYPES WHERE ID=1")
         assert error.value.phase == "python_conversion"
-        assert pool.stats()["idle"] == 1  # native cleanup preceded Python conversion
+        # Native cleanup never waits for Python conversion and leaves the slot idle.
+        assert settled(pool)["idle"] == 1
         assert pool.stats()["timeouts"] == 1
         assert pool.fetch_val("SELECT AMOUNT FROM FBFAST_TYPES WHERE ID=1", timeout=None) == original_decimal("-12345678.9012")
 
@@ -93,7 +94,7 @@ def test_close_wait_checks_python_signals_while_attach_is_pending(fb, config):
             timer.start()
             start = time.monotonic()
             with pytest.raises(KeyboardInterrupt):
-                pool.close_sync()
+                pool.close()
             assert time.monotonic() - start < 1
             assert pool.stats()["opening"] == 1
         finally:
@@ -102,5 +103,5 @@ def test_close_wait_checks_python_signals_while_attach_is_pending(fb, config):
             release.set()
             caller.join(3)
             server.join(3)
-            pool.close_sync()
+            pool.close()
         assert pool.stats()["closed"] == 1

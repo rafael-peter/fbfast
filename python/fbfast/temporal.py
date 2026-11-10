@@ -4,19 +4,14 @@ from datetime import date, datetime, time, timedelta, timezone
 import re
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from ._native import DataConversionError
+from ._errors import DataConversionError
 
 _MJD_ORDINAL = 678576
 _OFFSET = re.compile(r"([+-])(\d{2}):(\d{2})", re.ASCII)
 
 
 def _error(message: str, phase: str = "python_conversion") -> DataConversionError:
-    error = DataConversionError(message)
-    error.phase = phase
-    error.sqlstate = None
-    error.native_codes = []
-    error.cleanup_errors = []
-    return error
+    return DataConversionError(message, phase=phase)
 
 
 @dataclass(frozen=True, slots=True)

@@ -80,6 +80,17 @@ impl StreamWait {
             Ok(None)
         }
     }
+    /// Blocks up to `timeout` for the next item without busy polling: the
+    /// worker raises the stream's signal on every event and on completion.
+    pub fn wait(&mut self, timeout: std::time::Duration) -> Result<Option<StreamItem>, Error> {
+        let signal = self.shared.as_ref().expect("live stream").signal.clone();
+        let seen = signal.generation();
+        if let Some(item) = self.poll()? {
+            return Ok(Some(item));
+        }
+        signal.wait(seen, timeout);
+        self.poll()
+    }
     pub async fn receive(&mut self) -> Result<Option<StreamItem>, Error> {
         if let Some(item) = self.poll()? {
             return Ok(Some(item));

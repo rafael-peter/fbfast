@@ -18,6 +18,7 @@ fn main() {
         .file("bridge/signals.cpp")
         .file("bridge/status.cpp")
         .file("bridge/attachment.cpp")
+        .file("bridge/info.cpp")
         .file("bridge/transaction.cpp")
         .file("bridge/statement.cpp")
         .file("bridge/metadata.cpp")

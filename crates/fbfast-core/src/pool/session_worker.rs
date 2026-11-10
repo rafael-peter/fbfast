@@ -86,6 +86,7 @@ pub(super) fn run(
     let cleanup = connection.finish_snapshot(&QueryOptions {
         first: true,
         unique_names: false,
+        prevalidated: false,
         deadline: end,
         cancellation: &job.progress.cancellation,
         cleaning: &|| Ok(false),
@@ -184,19 +185,7 @@ fn operation(
     let control = connection.begin_control(job.id)?;
     let lease = controller.arm(control, job.id, end, job.progress.clone());
     let mut result = super::worker_query::execute(inner, connection, job, end, &|| lease.finish());
-    if !lease.is_finished() {
-        match lease.finish() {
-            Ok(true) => connection.poison(),
-            Err(cleanup) => {
-                connection.poison();
-                match &mut result {
-                    Err(error) => error.cleanup.push(cleanup),
-                    Ok(_) => result = Err(cleanup),
-                }
-            }
-            Ok(false) => (),
-        }
-    }
+    super::worker_lifecycle::settle_lease(&lease, connection, &mut result);
     phase(inner, index, Phase::Leased);
     count_timeout(inner, job, &result);
     result

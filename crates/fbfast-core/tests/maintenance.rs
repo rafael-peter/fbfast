@@ -1,3 +1,4 @@
+use fbfast_core::pool::Query;
 use fbfast_core::{
     config::{Config, EnvFile, Inputs},
     pool::{Output, Pending, Pool},
@@ -97,9 +98,9 @@ fn active_query_is_not_expired_and_spare_capacity_maintains_idle_floor() {
     options.max_lifetime = 0.1;
     let pool = pool(options);
     warmup(&pool);
-    let mut pending = pool.submit_rows(
+    let mut pending = pool.submit(Query::rows(
         "WITH RECURSIVE N(I) AS (SELECT 1 FROM RDB$DATABASE UNION ALL SELECT I+1 FROM N WHERE I<1000) SELECT SUM(CAST(A.I AS BIGINT)*B.I*C.I) FROM N A CROSS JOIN N B CROSS JOIN N C".into(),
-        vec![], true, false, None).unwrap();
+        vec![], true, false, None)).unwrap();
     until(|| {
         let stats = pool.stats().unwrap();
         stats.leased == 1 && stats.idle == 1

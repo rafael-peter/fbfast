@@ -22,6 +22,9 @@ struct FbAttach {
     const char* app_name;
     const char* config;
     uint32_t connect_seconds;
+    // Inline BLOB transfer (protocol 19, Firebird 5.0.3+); negative keeps the client default.
+    int64_t max_inline_blob_size;
+    int64_t max_blob_cache_size;
 };
 struct FbColumn {
     uint32_t type, length, charset, offset, null_offset;
@@ -48,7 +51,9 @@ void fbfast_cancel_disable(void*, FbError*) noexcept;
 void fbfast_begin(void*, uint32_t snapshot, uint32_t lock_seconds, uint64_t snapshot_number, FbError*) noexcept;
 void fbfast_rollback(void*, FbError*) noexcept;
 void fbfast_reset(void*, FbError*) noexcept;
+uint32_t fbfast_reset_restart(void*, FbError*) noexcept;
 void fbfast_ping(void*, FbError*) noexcept;
+void fbfast_attachment_info(void*, const uint8_t* items, uint32_t count, uint64_t* values, FbError*) noexcept;
 uint64_t fbfast_prepare(void*, const char*, FbError*) noexcept;
 void fbfast_free_statement(void*, uint64_t, FbError*) noexcept;
 uint32_t fbfast_message_length(void*, uint64_t, uint32_t input, FbError*) noexcept;

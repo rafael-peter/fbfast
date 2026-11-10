@@ -1,12 +1,6 @@
-use crate::{
-    errors::from_core,
-    pool::PyPool,
-    pool_wait::{internal, wait},
-    values::Converter,
-};
+use crate::{errors::from_core, pool::PyPool};
 use fbfast_core::{
     error::Error,
-    pool::Output,
     sinks::json::{JsonFormat, JsonOptions},
 };
 use pyo3::prelude::*;
@@ -66,21 +60,12 @@ pub fn query<'py>(
         )
         .map(Bound::unbind);
     }
-    pool.inner.stats().map_err(from_core)?;
-    let mut converter = Converter::new(py)?;
-    let params = converter.params(params)?;
-    let mut pending = pool
-        .inner
-        .submit_json(sql, params, json, timeout)
-        .map_err(from_core)?;
-    let output = wait(py, &mut pending)?;
-    converter.set_budget(pending.delivery_budget().map_err(from_core)?);
-    let result = match &output {
-        Output::Json(json) => converter.bytes(&json.data),
-        _ => Err(internal()),
-    };
-    py.detach(|| drop(output));
-    let result = result?;
-    pending.delivery_complete();
-    Ok(result)
+    crate::delivery::run(
+        py,
+        &pool.inner,
+        sql,
+        params,
+        timeout,
+        crate::delivery::Form::Json(json),
+    )
 }
